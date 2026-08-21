@@ -8,6 +8,7 @@ RUN npm run build && npm run build --prefix panel
 
 FROM node:24-slim
 ENV NODE_ENV=production
+ENV DATA_DIR=/data
 WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev --no-fund --no-audit && npm cache clean --force
