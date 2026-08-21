@@ -12,6 +12,8 @@ jobs:
   release-please:
     runs-on: ubuntu-latest
     steps:
+      # gh pr merge shells out to git, so the job needs a checkout to run in.
+      - uses: actions/checkout@v4
       # Conventional commits drive the version bump and the changelog. The PAT
       # (already configured as RELEASE_PLEASE_PAT) lets the release PR trigger
       # the other workflows on merge, which the default GITHUB_TOKEN cannot.
@@ -27,7 +29,9 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.RELEASE_PLEASE_PAT }}
           PR_JSON: ${{ steps.release.outputs.pr }}
+          REPO: ${{ github.repository }}
         run: |
           number=$(echo "$PR_JSON" | jq -r '.number')
           echo "Auto-merging release PR #$number"
-          gh pr merge "$number" --squash --auto || gh pr merge "$number" --squash
+          gh pr merge "$number" -R "$REPO" --squash --auto \
+            || gh pr merge "$number" -R "$REPO" --squash
