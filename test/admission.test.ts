@@ -6,6 +6,11 @@ import {
   QueueFullError,
   type GrantMeta,
 } from '../src/admission/queue.js'
+import type { Upstream } from '../src/upstream/client.js'
+
+/** Force one backstop poll on demand (the method is otherwise interval-driven). */
+const pollOutOfBand = (a: Admission): Promise<void> =>
+  (a as unknown as { pollOutOfBand(): Promise<void> }).pollOutOfBand()
 
 const meta = (keyName = 'app-a'): GrantMeta => ({
   opClass: 'clone',
@@ -84,4 +89,54 @@ test('a released grant with an attached task stays held', async () => {
   grant.attachTask('UPID:n1:0:0:0:qmclone:1100100:root@pam:')
   grant.release() // must be a no-op: the task poller owns the slot now
   assert.equal(admission.snapshot().classes.find((c) => c.name === 'clone')?.running.length, 1)
+})
+
+test('backstop discounts out-of-band cluster load and excludes vncproxy', async () => {
+  const tasks = [
+    { upid: 'UPID:n1:1:1:1:qmclone:200:root@pam:', type: 'qmclone' }, // out-of-band, running
+    { upid: 'UPID:n1:2:2:2:vncproxy:300:root@pam:', type: 'vncproxy' }, // console: never counts
+    { upid: 'UPID:n1:3:3:3:qmclone:400:root@pam:', type: 'qmclone', endtime: 9 }, // finished
+  ]
+  const upstream = { api: () => Promise.resolve(tasks) } as unknown as Upstream
+  const admission = new Admission(upstream, {
+    caps: { clone: 2, delete: 1, suspend: 1 },
+    maxQueue: 2,
+    maxHoldMs: 200,
+    taskPollMs: 1_000_000,
+    taskTimeoutMs: 1_000_000,
+  })
+  await pollOutOfBand(admission)
+
+  const clone = admission.snapshot().classes.find((c) => c.name === 'clone')
+  assert.equal(clone?.outOfBand, 1) // only the running qmclone that is not ours
+  assert.equal(clone?.effectiveCap, 1) // cap 2 minus 1 out-of-band
+
+  // Effective cap 1: the first grant fills it, the second must queue.
+  const a = await admission.acquire(meta())
+  const bPromise = admission.acquire(meta('b'))
+  bPromise.catch(() => {})
+  await new Promise((r) => setTimeout(r, 20))
+  assert.equal(admission.snapshot().classes.find((c) => c.name === 'clone')?.waiting.length, 1)
+  a.release()
+  ;(await bPromise).release()
+})
+
+test('backstop decays the discount to zero when the cluster is unreadable', async () => {
+  const upstream = {
+    api: () => Promise.reject(new Error('cluster unreadable')),
+  } as unknown as Upstream
+  const admission = new Admission(upstream, {
+    caps: { clone: 1, delete: 1, suspend: 1 },
+    maxQueue: 2,
+    maxHoldMs: 200,
+    taskPollMs: 1_000_000,
+    taskTimeoutMs: 1_000_000,
+  })
+  // Seed a stale discount, then confirm repeated read failures decay it away:
+  // an unreadable cluster must never keep obstructing legitimate apps.
+  ;(admission as unknown as { outOfBand: Record<string, number> }).outOfBand.clone = 5
+  await pollOutOfBand(admission)
+  await pollOutOfBand(admission)
+  await pollOutOfBand(admission)
+  assert.equal(admission.snapshot().classes.find((c) => c.name === 'clone')?.outOfBand, 0)
 })

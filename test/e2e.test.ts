@@ -36,6 +36,9 @@ function fakeUpstream(): Server {
 
       if (p === '/api2/json/version') return json(200, { version: '8.4.1' })
 
+      // Backstop poll: no out-of-band cluster load in this fixture.
+      if (p === '/api2/json/cluster/tasks') return json(200, [])
+
       if (p === '/api2/json/access/ticket' && req.method === 'POST') {
         const params = new URLSearchParams(Buffer.concat(chunks).toString())
         if (

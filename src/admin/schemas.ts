@@ -63,6 +63,10 @@ export const WaitingSchema = Type.Object({
 export const QueueClassSchema = Type.Object({
   name: Type.String(),
   cap: Type.Integer(),
+  /** Contended cluster load of this class running outside the proxy. */
+  outOfBand: Type.Integer(),
+  /** cap minus outOfBand, clamped at zero: the slots the proxy will grant. */
+  effectiveCap: Type.Integer(),
   running: Type.Array(RunningSchema),
   waiting: Type.Array(WaitingSchema),
 })
@@ -112,6 +116,8 @@ export const StatusReply = Type.Object({
     Type.Object({
       name: Type.String(),
       cap: Type.Integer(),
+      outOfBand: Type.Integer(),
+      effectiveCap: Type.Integer(),
       active: Type.Integer(),
       waiting: Type.Integer(),
     }),

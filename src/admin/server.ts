@@ -173,6 +173,8 @@ export async function buildAdminServer(deps: AdminDeps): Promise<FastifyInstance
       admission: snapshot.classes.map((c) => ({
         name: c.name,
         cap: c.cap,
+        outOfBand: c.outOfBand,
+        effectiveCap: c.effectiveCap,
         active: c.running.length,
         waiting: c.waiting.length,
       })),

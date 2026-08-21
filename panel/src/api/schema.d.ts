@@ -205,6 +205,8 @@ export interface paths {
                             admission: {
                                 name: string;
                                 cap: number;
+                                outOfBand: number;
+                                effectiveCap: number;
                                 active: number;
                                 waiting: number;
                             }[];
@@ -247,6 +249,8 @@ export interface paths {
                             classes: {
                                 name: string;
                                 cap: number;
+                                outOfBand: number;
+                                effectiveCap: number;
                                 running: {
                                     id: number;
                                     keyName: string;

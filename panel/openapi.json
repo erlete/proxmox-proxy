@@ -251,6 +251,8 @@
                         "required": [
                           "name",
                           "cap",
+                          "outOfBand",
+                          "effectiveCap",
                           "active",
                           "waiting"
                         ],
@@ -259,6 +261,12 @@
                             "type": "string"
                           },
                           "cap": {
+                            "type": "integer"
+                          },
+                          "outOfBand": {
+                            "type": "integer"
+                          },
+                          "effectiveCap": {
                             "type": "integer"
                           },
                           "active": {
@@ -298,6 +306,8 @@
                         "required": [
                           "name",
                           "cap",
+                          "outOfBand",
+                          "effectiveCap",
                           "running",
                           "waiting"
                         ],
@@ -306,6 +316,12 @@
                             "type": "string"
                           },
                           "cap": {
+                            "type": "integer"
+                          },
+                          "outOfBand": {
+                            "type": "integer"
+                          },
+                          "effectiveCap": {
                             "type": "integer"
                           },
                           "running": {
