@@ -1,0 +1,8 @@
+node_modules
+panel/node_modules
+dist
+panel/dist
+data
+.env
+.git
+*.md

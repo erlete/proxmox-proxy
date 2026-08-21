@@ -1,0 +1,38 @@
+services:
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    # Caddy is the only exposed container: data plane on 443, panel on 8443.
+    ports:
+      - '${PROXY_HTTPS_PORT:-443}:443'
+      - '${PANEL_HTTPS_PORT:-8443}:8443'
+    environment:
+      PROXY_DOMAIN: '${PROXY_DOMAIN:-proxy.localhost}'
+      PANEL_ALLOWLIST: '${PANEL_ALLOWLIST:-private_ranges}'
+    volumes:
+      - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - proxy
+    networks:
+      - internal
+
+  proxy:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DATA_DIR: /data
+    volumes:
+      - proxy_data:/data
+    networks:
+      - internal
+
+networks:
+  internal:
+
+volumes:
+  caddy_data:
+  caddy_config:
+  proxy_data:
