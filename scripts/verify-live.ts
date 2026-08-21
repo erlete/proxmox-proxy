@@ -14,7 +14,10 @@ import { SingletonHeldError, SingletonLock } from '../src/upstream/singleton.js'
 const node = process.env.VERIFY_NODE ?? ''
 const templateVmid = Number.parseInt(process.env.VERIFY_TEMPLATE_VMID ?? '', 10)
 const newid = Number.parseInt(process.env.VERIFY_NEWID ?? '', 10)
-assert.ok(node && templateVmid > 0 && newid > 0, 'set VERIFY_NODE, VERIFY_TEMPLATE_VMID, VERIFY_NEWID')
+assert.ok(
+  node && templateVmid > 0 && newid > 0,
+  'set VERIFY_NODE, VERIFY_TEMPLATE_VMID, VERIFY_NEWID',
+)
 
 const config = loadConfig({
   ...process.env,
@@ -103,7 +106,10 @@ try {
   step('passthrough: version and whoami')
   const version = await fetch(`${dataUrl}/api2/json/version`, { headers: auth })
   assert.equal(version.status, 200)
-  console.log('cluster version:', JSON.stringify(((await version.json()) as { data: unknown }).data))
+  console.log(
+    'cluster version:',
+    JSON.stringify(((await version.json()) as { data: unknown }).data),
+  )
   const who = await fetch(`${dataUrl}/proxy/whoami`, { headers: auth })
   assert.equal(who.status, 200)
   console.log('whoami:', JSON.stringify(await who.json()))
@@ -140,7 +146,10 @@ try {
     headers: auth,
   })
   assert.equal(exists.status, 200)
-  console.log('clone exists:', JSON.stringify(((await exists.json()) as { data: { status: string } }).data.status))
+  console.log(
+    'clone exists:',
+    JSON.stringify(((await exists.json()) as { data: { status: string } }).data.status),
+  )
 
   step(`delete the clone ${newid} through admission`)
   const del = await fetch(`${dataUrl}/api2/json/nodes/${node}/qemu/${newid}`, {
@@ -163,9 +172,19 @@ try {
 
   step('recorded operations')
   const ops = await fetch(`${adminUrl}/api/operations?limit=20`, { headers: { cookie } })
-  const rows = ((await ops.json()) as {
-    rows: { method: string; path: string; opClass: string | null; status: number | null; queueMs: number | null; taskMs: number | null; note: string | null }[]
-  }).rows
+  const rows = (
+    (await ops.json()) as {
+      rows: {
+        method: string
+        path: string
+        opClass: string | null
+        status: number | null
+        queueMs: number | null
+        taskMs: number | null
+        note: string | null
+      }[]
+    }
+  ).rows
   for (const r of rows) {
     console.log(
       ` ${r.method} ${r.path} class=${r.opClass ?? '-'} status=${r.status} queue=${r.queueMs}ms task=${r.taskMs ?? '-'}ms note=${r.note ?? '-'}`,

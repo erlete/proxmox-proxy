@@ -85,7 +85,10 @@ interface TaskStatus {
  */
 export class Admission extends EventEmitter {
   private nextId = 1
-  private classes: Record<OpClassName, { cap: number; running: Map<number, Running>; waiting: Waiter[] }>
+  private classes: Record<
+    OpClassName,
+    { cap: number; running: Map<number, Running>; waiting: Waiter[] }
+  >
   private pollTimer: NodeJS.Timeout | null = null
   private changePending = false
 

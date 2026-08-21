@@ -109,7 +109,8 @@ export async function createApp(config: Config, onFatal?: () => void): Promise<A
   })
   settings.on('change', (s: Settings) => admission.applyOpts(admissionOptsFrom(s)))
 
-  const singletonHeld = (): boolean => (config.singleton.disabled ? true : (singleton?.held ?? false))
+  const singletonHeld = (): boolean =>
+    config.singleton.disabled ? true : (singleton?.held ?? false)
 
   const consoleBroker = new ConsoleBroker(upstream, config.console)
 
@@ -129,7 +130,15 @@ export async function createApp(config: Config, onFatal?: () => void): Promise<A
     dataServer.listen(config.dataPort, config.bindHost, resolve)
   })
 
-  const admin = await buildAdminServer({ config, keys, settings, admission, health, ops, singletonHeld })
+  const admin = await buildAdminServer({
+    config,
+    keys,
+    settings,
+    admission,
+    health,
+    ops,
+    singletonHeld,
+  })
   await admin.listen({ port: config.adminPort, host: config.bindHost })
 
   let closed = false
@@ -155,5 +164,18 @@ export async function createApp(config: Config, onFatal?: () => void): Promise<A
     singleton: config.singleton.disabled ? 'disabled' : 'held',
   })
 
-  return { config, db, keys, settings, upstream, admission, health, ops, singleton, dataServer, admin, close }
+  return {
+    config,
+    db,
+    keys,
+    settings,
+    upstream,
+    admission,
+    health,
+    ops,
+    singleton,
+    dataServer,
+    admin,
+    close,
+  }
 }

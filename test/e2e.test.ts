@@ -38,7 +38,10 @@ function fakeUpstream(): Server {
 
       if (p === '/api2/json/access/ticket' && req.method === 'POST') {
         const params = new URLSearchParams(Buffer.concat(chunks).toString())
-        if (params.get('username') !== 'svc-console@pve' || params.get('password') !== 'console-pw') {
+        if (
+          params.get('username') !== 'svc-console@pve' ||
+          params.get('password') !== 'console-pw'
+        ) {
           return json(401, null)
         }
         return json(200, { ticket: 'FAKE-AUTH-COOKIE', CSRFPreventionToken: 'FAKE-CSRF' })
@@ -307,7 +310,12 @@ test('operations were recorded', async () => {
   const res = await fetch(`${adminUrl}/api/operations?limit=100`, { headers: { cookie } })
   assert.equal(res.status, 200)
   const { rows } = (await res.json()) as {
-    rows: { opClass: string | null; status: number | null; upid: string | null; note: string | null }[]
+    rows: {
+      opClass: string | null
+      status: number | null
+      upid: string | null
+      note: string | null
+    }[]
   }
   const clones = rows.filter((r) => r.opClass === 'clone' && r.status === 200)
   assert.equal(clones.length, 2)

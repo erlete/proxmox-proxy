@@ -54,7 +54,8 @@ function int(env: NodeJS.ProcessEnv, name: string, dflt: number): number {
   const v = env[name]?.trim()
   if (!v) return dflt
   const n = Number.parseInt(v, 10)
-  if (!Number.isFinite(n) || n < 0) throw new Error(`Env var ${name} must be a non-negative integer`)
+  if (!Number.isFinite(n) || n < 0)
+    throw new Error(`Env var ${name} must be a non-negative integer`)
   return n
 }
 
@@ -68,7 +69,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   const upstreamUrl = new URL(required(env, 'PROXMOX_UPSTREAM_URL'))
 
   let serviceToken = required(env, 'PROXMOX_SERVICE_TOKEN')
-  if (serviceToken.startsWith('PVEAPIToken=')) serviceToken = serviceToken.slice('PVEAPIToken='.length)
+  if (serviceToken.startsWith('PVEAPIToken='))
+    serviceToken = serviceToken.slice('PVEAPIToken='.length)
   if (!/^[^@!=\s]+@[^@!=\s]+![^@!=\s]+=.+$/.test(serviceToken)) {
     throw new Error('PROXMOX_SERVICE_TOKEN must look like user@realm!tokenid=secret')
   }

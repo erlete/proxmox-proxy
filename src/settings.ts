@@ -89,7 +89,10 @@ export class SettingsStore extends EventEmitter {
     this.values = next
     setMeta(this.db, META_KEY, JSON.stringify(this.values))
     if (changed.length > 0) {
-      log.info('settings updated', Object.fromEntries(changed.map((k) => [k, next[k as keyof Settings]])))
+      log.info(
+        'settings updated',
+        Object.fromEntries(changed.map((k) => [k, next[k as keyof Settings]])),
+      )
       this.emit('change', this.all)
     }
     return this.all

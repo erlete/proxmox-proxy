@@ -80,7 +80,11 @@ export class Upstream {
     })
     const text = await res.body.text()
     if (res.statusCode >= 400) {
-      throw new UpstreamError(`upstream ${method} ${path} -> ${res.statusCode}`, res.statusCode, text)
+      throw new UpstreamError(
+        `upstream ${method} ${path} -> ${res.statusCode}`,
+        res.statusCode,
+        text,
+      )
     }
     try {
       return (JSON.parse(text) as { data: T }).data

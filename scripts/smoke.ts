@@ -17,7 +17,11 @@ const adminPort = (app.admin.server.address() as { port: number }).port
 const dataPort = (app.dataServer.address() as { port: number }).port
 
 const index = await fetch(`http://127.0.0.1:${adminPort}/`)
-console.log('panel index:', index.status, (await index.text()).includes('proxmox-proxy') ? 'has title' : 'MISSING TITLE')
+console.log(
+  'panel index:',
+  index.status,
+  (await index.text()).includes('proxmox-proxy') ? 'has title' : 'MISSING TITLE',
+)
 const health = await fetch(`http://127.0.0.1:${dataPort}/proxy/health`)
 console.log('data health:', health.status, await health.text())
 const adminHealth = await fetch(`http://127.0.0.1:${adminPort}/api/health`)

@@ -28,7 +28,13 @@ export function vmidFromUpid(upid: string): number | null {
 }
 
 export function classify(method: string, pathname: string): Classified {
-  const out: Classified = { opClass: null, node: null, pathVmid: null, upidVmid: null, blocked: null }
+  const out: Classified = {
+    opClass: null,
+    node: null,
+    pathVmid: null,
+    upidVmid: null,
+    blocked: null,
+  }
 
   if (ACCESS_RE.test(pathname)) {
     out.blocked = 'identity and ACLs are managed by the proxy, not through it'

@@ -71,9 +71,11 @@ export class ConsoleBroker {
     if (res.statusCode >= 400) {
       throw new UpstreamError(`console auth failed (${res.statusCode})`, res.statusCode, text)
     }
-    const data = (JSON.parse(text) as {
-      data: { ticket: string; CSRFPreventionToken: string }
-    }).data
+    const data = (
+      JSON.parse(text) as {
+        data: { ticket: string; CSRFPreventionToken: string }
+      }
+    ).data
     this.auth = { ticket: data.ticket, csrf: data.CSRFPreventionToken, mintedAt: Date.now() }
     log.info('console identity ticket minted', { user: this.creds!.username })
     return this.auth
@@ -120,8 +122,7 @@ export class ConsoleBroker {
     if (res.statusCode >= 400) {
       throw new UpstreamError(`vncproxy failed (${res.statusCode})`, res.statusCode, res.text)
     }
-    const data = (JSON.parse(res.text) as { data: { port: string | number; ticket: string } })
-      .data
+    const data = (JSON.parse(res.text) as { data: { port: string | number; ticket: string } }).data
     return {
       port: String(data.port),
       ticket: data.ticket,

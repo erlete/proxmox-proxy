@@ -59,8 +59,7 @@ export function openDb(dataDir: string): Db {
 
 export function getMeta(db: Db, key: string): string | null {
   const row = db.prepare('SELECT value FROM meta WHERE key = ?').get(key) as
-    | { value: string }
-    | undefined
+    { value: string } | undefined
   return row ? String(row.value) : null
 }
 

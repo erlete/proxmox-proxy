@@ -151,7 +151,10 @@ export class KeyStore {
 
   list(): ApiKeyRecord[] {
     return [...this.cache.values()]
-      .map((e) => ({ ...e.record, vmidRanges: e.record.vmidRanges.map((r) => [...r] as VmidRange) }))
+      .map((e) => ({
+        ...e.record,
+        vmidRanges: e.record.vmidRanges.map((r) => [...r] as VmidRange),
+      }))
       .sort((a, b) => a.name.localeCompare(b.name))
   }
 

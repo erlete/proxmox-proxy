@@ -1,10 +1,22 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { Admission, HoldTimeoutError, QueueFullError, type GrantMeta } from '../src/admission/queue.js'
+import {
+  Admission,
+  HoldTimeoutError,
+  QueueFullError,
+  type GrantMeta,
+} from '../src/admission/queue.js'
 
-const meta = (keyName = 'app-a'): GrantMeta => ({ opClass: 'clone', keyName, vmid: 1100100, node: 'n1' })
+const meta = (keyName = 'app-a'): GrantMeta => ({
+  opClass: 'clone',
+  keyName,
+  vmid: 1100100,
+  node: 'n1',
+})
 
-function build(overrides: Partial<{ cloneCap: number; maxQueue: number; maxHoldMs: number }> = {}): Admission {
+function build(
+  overrides: Partial<{ cloneCap: number; maxQueue: number; maxHoldMs: number }> = {},
+): Admission {
   return new Admission(null, {
     caps: { clone: overrides.cloneCap ?? 1, delete: 1, suspend: 1 },
     maxQueue: overrides.maxQueue ?? 2,
