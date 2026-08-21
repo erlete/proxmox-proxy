@@ -12,6 +12,7 @@ import { OpsLog } from './ops.js'
 import { hashPassword } from './password.js'
 import { SettingsStore, type Settings } from './settings.js'
 import { Upstream } from './upstream/client.js'
+import { ConsoleBroker } from './upstream/console.js'
 import { HealthMonitor } from './upstream/health.js'
 import { SingletonLock } from './upstream/singleton.js'
 
@@ -110,6 +111,8 @@ export async function createApp(config: Config, onFatal?: () => void): Promise<A
 
   const singletonHeld = (): boolean => (config.singleton.disabled ? true : (singleton?.held ?? false))
 
+  const consoleBroker = new ConsoleBroker(upstream, config.console)
+
   const dataServer = createDataPlane({
     config,
     keys,
@@ -117,6 +120,7 @@ export async function createApp(config: Config, onFatal?: () => void): Promise<A
     upstream,
     admission,
     health,
+    console: consoleBroker,
     singletonHeld,
     ops,
   })

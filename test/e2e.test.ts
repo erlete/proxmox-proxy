@@ -36,6 +36,22 @@ function fakeUpstream(): Server {
 
       if (p === '/api2/json/version') return json(200, { version: '8.4.1' })
 
+      if (p === '/api2/json/access/ticket' && req.method === 'POST') {
+        const params = new URLSearchParams(Buffer.concat(chunks).toString())
+        if (params.get('username') !== 'svc-console@pve' || params.get('password') !== 'console-pw') {
+          return json(401, null)
+        }
+        return json(200, { ticket: 'FAKE-AUTH-COOKIE', CSRFPreventionToken: 'FAKE-CSRF' })
+      }
+
+      const vnc = /^\/api2\/json\/nodes\/n1\/qemu\/(\d+)\/vncproxy$/.exec(p)
+      if (vnc && req.method === 'POST') {
+        // The console identity authenticates with cookie + CSRF, never a token.
+        if (req.headers.cookie !== 'PVEAuthCookie=FAKE-AUTH-COOKIE') return json(401, null)
+        if (req.headers.csrfpreventiontoken !== 'FAKE-CSRF') return json(401, null)
+        return json(200, { port: 5901, ticket: `VNCTICKET-${vnc[1]}` })
+      }
+
       if (p === '/api2/json/pools/testlock' && req.method === 'GET') {
         if (poolComment == null) return json(500, null)
         return json(200, { comment: poolComment, members: [] })
@@ -107,6 +123,8 @@ before(async () => {
     DATA_PORT: '0',
     ADMIN_PORT: '0',
     SINGLETON_POOL: 'testlock',
+    PROXMOX_CONSOLE_USERNAME: 'svc-console@pve',
+    PROXMOX_CONSOLE_PASSWORD: 'console-pw',
   })
   app = await createApp(config)
   dataUrl = `http://127.0.0.1:${(app.dataServer.address() as AddressInfo).port}`
@@ -300,6 +318,46 @@ test('operations were recorded', async () => {
     const body = (await res2.json()) as { rows: { opClass: string | null; note: string | null }[] }
     return body.rows.some((r) => r.opClass === 'clone' && r.note === 'OK')
   })
+})
+
+test('console-session mints credentials for in-scope vms only', async () => {
+  const mint = (vmid: number): Promise<Response> =>
+    fetch(`${dataUrl}/proxy/console-session`, {
+      method: 'POST',
+      headers: { authorization: appToken, 'content-type': 'application/json' },
+      body: JSON.stringify({ node: 'n1', vmid }),
+    })
+
+  const ok = await mint(1100100)
+  assert.equal(ok.status, 200)
+  const session = (await ok.json()) as {
+    port: string
+    ticket: string
+    cookie: string
+    websocketBase: string
+    expiresAt: number
+  }
+  assert.equal(session.port, '5901')
+  assert.equal(session.ticket, 'VNCTICKET-1100100')
+  assert.equal(session.cookie, 'FAKE-AUTH-COOKIE')
+  assert.ok(session.websocketBase.startsWith('http'))
+  assert.ok(session.expiresAt > Date.now())
+
+  const denied = await mint(999)
+  assert.equal(denied.status, 403)
+
+  const badBody = await fetch(`${dataUrl}/proxy/console-session`, {
+    method: 'POST',
+    headers: { authorization: appToken, 'content-type': 'application/json' },
+    body: 'not-json',
+  })
+  assert.equal(badBody.status, 400)
+
+  const noAuth = await fetch(`${dataUrl}/proxy/console-session`, {
+    method: 'POST',
+    body: JSON.stringify({ node: 'n1', vmid: 1100100 }),
+  })
+  assert.equal(noAuth.status, 401)
 })
 
 test('openapi document is served', async () => {

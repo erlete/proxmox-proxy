@@ -15,8 +15,9 @@ import { vmidAllowed, type ApiKeyRecord, type KeyStore } from '../keys/store.js'
 import { log } from '../log.js'
 import type { OpsLog } from '../ops.js'
 import type { SettingsStore } from '../settings.js'
+import { ConsoleDisabledError, type ConsoleBroker } from '../upstream/console.js'
 import type { HealthMonitor } from '../upstream/health.js'
-import type { Upstream } from '../upstream/client.js'
+import { UpstreamError, type Upstream } from '../upstream/client.js'
 
 export interface DataPlaneDeps {
   config: Config
@@ -25,6 +26,7 @@ export interface DataPlaneDeps {
   upstream: Upstream
   admission: Admission
   health: HealthMonitor
+  console: ConsoleBroker
   singletonHeld: () => boolean
   ops: OpsLog
 }
@@ -112,7 +114,7 @@ function extractNewid(body: Buffer, contentType: string | undefined): number | n
 }
 
 export function createDataPlane(deps: DataPlaneDeps): Server {
-  const { config, keys, settings, upstream, admission, health, ops } = deps
+  const { config, keys, settings, upstream, admission, health, console: consoleBroker, ops } = deps
   const serviceAuth = `PVEAPIToken=${config.serviceToken}`
 
   const healthBody = (): Record<string, unknown> => ({
@@ -233,6 +235,83 @@ export function createDataPlane(deps: DataPlaneDeps): Server {
     }
   }
 
+  /**
+   * Native endpoint: mints VNC console credentials for an in-scope VM so the
+   * app can open the websocket DIRECTLY against the cluster node (streams
+   * never cross the proxy) without holding any Proxmox credential itself.
+   */
+  async function handleConsoleSession(
+    req: IncomingMessage,
+    res: ServerResponse,
+    key: ApiKeyRecord,
+  ): Promise<void> {
+    const started = Date.now()
+    if (!consoleBroker.enabled) {
+      sendJson(res, 501, {
+        message: 'console sessions are not configured on this proxy (PROXMOX_CONSOLE_USERNAME)',
+      })
+      return
+    }
+    let body: { node?: unknown; vmid?: unknown }
+    try {
+      const raw = await readBody(req, 4096)
+      body = JSON.parse(raw.toString()) as typeof body
+    } catch {
+      sendJson(res, 400, { message: 'expected a JSON body: {node, vmid}' })
+      return
+    }
+    const node = typeof body.node === 'string' ? body.node : ''
+    const vmid = typeof body.vmid === 'number' ? body.vmid : Number.NaN
+    if (!/^[A-Za-z0-9._-]{1,63}$/.test(node) || !Number.isInteger(vmid) || vmid <= 0) {
+      sendJson(res, 400, { message: 'expected a JSON body: {node, vmid}' })
+      return
+    }
+    if (!vmidAllowed(key.vmidRanges, vmid)) {
+      sendJson(res, 403, { message: `vmid ${vmid} is outside the ranges of this key` })
+      return
+    }
+    try {
+      const session = await consoleBroker.createSession(node, vmid)
+      const current = settings.all
+      sendJson(res, 200, {
+        ...session,
+        websocketBase: current.publicWsUrl || config.upstreamUrl.origin,
+      })
+      ops.record({
+        keyName: key.name,
+        method: 'POST',
+        path: '/proxy/console-session',
+        opClass: null,
+        vmid,
+        status: 200,
+        queueMs: null,
+        durationMs: Date.now() - started,
+        upid: null,
+        note: 'console-session',
+      })
+    } catch (err) {
+      if (err instanceof ConsoleDisabledError) {
+        sendJson(res, 501, { message: err.message })
+        return
+      }
+      const status = err instanceof UpstreamError ? err.statusCode : 502
+      sendJson(res, 502, { message: 'console session failed against the cluster' })
+      ops.record({
+        keyName: key.name,
+        method: 'POST',
+        path: '/proxy/console-session',
+        opClass: null,
+        vmid,
+        status,
+        queueMs: null,
+        durationMs: Date.now() - started,
+        upid: null,
+        note: 'console-error',
+      })
+      log.warn('console session failed', { vmid, error: String(err) })
+    }
+  }
+
   async function handlePass(
     req: IncomingMessage,
     res: ServerResponse,
@@ -282,7 +361,9 @@ export function createDataPlane(deps: DataPlaneDeps): Server {
         return
       }
 
-      if (!url.pathname.startsWith('/api2/') && url.pathname !== '/proxy/whoami') {
+      const isNative =
+        url.pathname === '/proxy/whoami' || url.pathname === '/proxy/console-session'
+      if (!url.pathname.startsWith('/api2/') && !isNative) {
         sendJson(res, 404, { message: 'not found' })
         return
       }
@@ -305,7 +386,17 @@ export function createDataPlane(deps: DataPlaneDeps): Server {
             delete: current.deleteCap,
             suspend: current.suspendCap,
           },
+          features: { consoleSession: consoleBroker.enabled },
         })
+        return
+      }
+
+      if (url.pathname === '/proxy/console-session') {
+        if (req.method !== 'POST') {
+          sendJson(res, 405, { message: 'method not allowed' })
+          return
+        }
+        await handleConsoleSession(req, res, key)
         return
       }
 

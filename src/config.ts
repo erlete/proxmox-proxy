@@ -15,6 +15,12 @@ export interface Config {
   upstreamInsecure: boolean
   /** Normalized "user@realm!tokenid=secret", no PVEAPIToken= prefix. */
   serviceToken: string
+  /**
+   * Dedicated low-privilege identity (VM.Console only) used to mint console
+   * sessions for apps. Optional: without it, /proxy/console-session answers
+   * 501 and apps must bring their own console credential.
+   */
+  console: { username: string; password: string } | null
   keysTokenUser: string
   dataDir: string
   bindHost: string
@@ -80,6 +86,13 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     upstreamCaPath: optional(env, 'PROXMOX_UPSTREAM_TLS_CA'),
     upstreamInsecure: bool(env, 'PROXMOX_UPSTREAM_TLS_INSECURE'),
     serviceToken,
+    console:
+      optional(env, 'PROXMOX_CONSOLE_USERNAME') && optional(env, 'PROXMOX_CONSOLE_PASSWORD')
+        ? {
+            username: optional(env, 'PROXMOX_CONSOLE_USERNAME')!,
+            password: optional(env, 'PROXMOX_CONSOLE_PASSWORD')!,
+          }
+        : null,
     keysTokenUser: optional(env, 'KEYS_TOKEN_USER') ?? 'svc-proxy@pve',
     dataDir: optional(env, 'DATA_DIR') ?? './data',
     bindHost: optional(env, 'BIND_HOST') ?? '0.0.0.0',

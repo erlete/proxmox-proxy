@@ -16,7 +16,7 @@ apps ──wss──> pveproxy :8006 (solo websockets VNC, directos por diseño)
 ```
 
 - **Plano de datos** (`/api2/...`): passthrough en streaming. Las operaciones pesadas (clone, delete, suspend) pasan por admisión; el resto fluye sin retención. El slot de admisión se retiene hasta que la **tarea** de Proxmox termina, no hasta que responde el HTTP, porque el coste real del cluster es la tarea.
-- **Plano nativo** (`/proxy/whoami`, `/proxy/health`): descubrimiento e identidad. Una app solo necesita `PROXMOX_PROXY_ENDPOINT` y `PROXMOX_PROXY_KEY`; sus rangos y la URL de websockets se consultan en `whoami`.
+- **Plano nativo** (`/proxy/whoami`, `/proxy/health`, `/proxy/console-session`): descubrimiento, identidad y consolas. Una app solo necesita `PROXMOX_PROXY_ENDPOINT` y `PROXMOX_PROXY_KEY`; sus rangos y la URL de websockets se consultan en `whoami`. `POST /proxy/console-session {node, vmid}` acuña las credenciales del websocket VNC (vncticket + cookie de una identidad dedicada con solo `VM.Console`), de modo que la app abre la consola directa contra el nodo sin poseer ninguna credencial de Proxmox; requiere configurar `PROXMOX_CONSOLE_USERNAME/PASSWORD`.
 - **Plano de gestión** (`/api/...` + panel): claves, colas en vivo (SSE), historial de operaciones y estado. API tipada con OpenAPI en `/api/openapi.json`; el cliente del panel se genera de ese documento.
 - **Singleton por cluster**: solo puede existir un proxy por cluster. El lock es un marcador con heartbeat en el comentario de un pool reservado de Proxmox; una segunda instancia se niega a arrancar mientras el marcador esté fresco y toma el relevo si caduca.
 - **Configuración en dos niveles**: el `.env` solo lleva lo de arranque (upstream, credenciales, red, singleton). Todo lo operable en caliente (caps de admisión, colas, TTL de sesión, URL de websockets, tamaño del historial) se gestiona desde el panel (Settings), se persiste en SQLite y se aplica sin reiniciar.
@@ -75,7 +75,6 @@ npm run openapi                  # regenerar panel/openapi.json y los tipos del 
 - **Carga fuera de banda**: la web UI de Proxmox, `qm` por SSH y los backups no pasan por el proxy. Pendiente: sondear el task list del cluster como backstop de admisión.
 - **Fail-open vs fail-closed** ante fallo interno de la admisión: decisión pendiente (sesgo previsto: fail-open con log ruidoso).
 - **Carriles por aplicación** con equidad (round-robin / token bucket) y política hold-vs-429 por clave: v0 usa colas FIFO por clase de operación.
-- **console-session** (`POST /proxy/console-session`): acuñar la credencial del websocket VNC para que las apps no necesiten ninguna credencial de Proxmox.
 - **Botón rojo**: parar una tarea en curso desde el panel.
 - **Inventario por aplicación**: la vista del cluster por rangos que la UI de Proxmox no puede dar.
 - `node:sqlite` es experimental en Node 24; el acceso está aislado en `src/db.ts` para poder migrar a `better-sqlite3` con un cambio local si hiciera falta.
