@@ -140,3 +140,24 @@ test('backstop decays the discount to zero when the cluster is unreadable', asyn
   await pollOutOfBand(admission)
   assert.equal(admission.snapshot().classes.find((c) => c.name === 'clone')?.outOfBand, 0)
 })
+
+test('backstop does not count our own upid-less grants as out-of-band', async () => {
+  // A clone task the cluster lists while our grant has not attached its UPID yet.
+  const tasks = [{ upid: 'UPID:n1:a:a:a:qmclone:200:root@pam:', type: 'qmclone' }]
+  const upstream = { api: () => Promise.resolve(tasks) } as unknown as Upstream
+  const admission = new Admission(upstream, {
+    caps: { clone: 2, delete: 1, suspend: 1 },
+    maxQueue: 2,
+    maxHoldMs: 200,
+    taskPollMs: 1_000_000,
+    taskTimeoutMs: 1_000_000,
+  })
+  // Grant a clone but do NOT attach a UPID: the in-flight grant->attachTask window.
+  const g = await admission.acquire(meta())
+  await pollOutOfBand(admission)
+  const clone = admission.snapshot().classes.find((c) => c.name === 'clone')
+  // Our own in-flight grant is discounted, so nothing counts as out-of-band.
+  assert.equal(clone?.outOfBand, 0)
+  assert.equal(clone?.effectiveCap, 2)
+  g.release()
+})

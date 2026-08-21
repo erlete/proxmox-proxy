@@ -336,6 +336,16 @@ export class Admission extends EventEmitter {
         if (ours.has(t.upid)) continue // already counted in our own running set
         counts[cls] += 1
       }
+      // A just-granted op is visible in the cluster list before its UPID is
+      // attached locally (attachTask runs only after the upstream round-trip),
+      // so it would otherwise be counted as out-of-band while also occupying a
+      // running slot: a double-count that over-throttles. Discount our own
+      // UPID-less grants per class. Biased to non-obstruction.
+      for (const cls of OP_CLASSES) {
+        let pending = 0
+        for (const r of this.classes[cls].running.values()) if (!r.upid) pending += 1
+        counts[cls] = Math.max(0, counts[cls] - pending)
+      }
       this.obPollErrors = 0
       this.setOutOfBand(counts)
     } catch (err) {
