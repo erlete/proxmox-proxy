@@ -16,6 +16,10 @@ services:
       - internal
 
   proxy:
+    # Published by the release workflow. `docker compose pull` fetches this on a
+    # deploy host; `docker compose up --build` still builds from source locally,
+    # tagging the same name. Pin a release with PROXY_IMAGE_TAG in .env.
+    image: ghcr.io/dlt-code/proxmox-proxy:${PROXY_IMAGE_TAG:-latest}
     build: .
     restart: unless-stopped
     env_file: .env

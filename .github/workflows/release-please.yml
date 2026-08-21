@@ -1,0 +1,33 @@
+name: release-please
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  release-please:
+    runs-on: ubuntu-latest
+    steps:
+      # Conventional commits drive the version bump and the changelog. The PAT
+      # (already configured as RELEASE_PLEASE_PAT) lets the release PR trigger
+      # the other workflows on merge, which the default GITHUB_TOKEN cannot.
+      - uses: googleapis/release-please-action@v4
+        id: release
+        with:
+          token: ${{ secrets.RELEASE_PLEASE_PAT }}
+      # Auto-merge the release PR so a tagged release is cut without a manual
+      # click. Prefer merge-on-green; fall back to an immediate squash merge
+      # when the repository has no auto-merge / branch protection configured.
+      - name: Auto-merge the release PR
+        if: ${{ steps.release.outputs.prs_created == 'true' }}
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_PLEASE_PAT }}
+          PR_JSON: ${{ steps.release.outputs.pr }}
+        run: |
+          number=$(echo "$PR_JSON" | jq -r '.number')
+          echo "Auto-merging release PR #$number"
+          gh pr merge "$number" --squash --auto || gh pr merge "$number" --squash
