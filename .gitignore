@@ -1,0 +1,7 @@
+node_modules/
+dist/
+panel/node_modules/
+panel/dist/
+data/
+.env
+*.local
