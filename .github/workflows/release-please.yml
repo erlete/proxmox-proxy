@@ -22,19 +22,20 @@ jobs:
         with:
           token: ${{ secrets.RELEASE_PLEASE_PAT }}
       # Auto-merge the release PR so a tagged release is cut without a manual
-      # click. Merge immediately: --admin bypasses branch protection on this
-      # sole-authority repo. (--auto is avoided on purpose: with no required
-      # checks it just enables auto-merge and leaves the PR sitting open.)
-      # The fallbacks cover a repo without admin bypass or protection.
-      - name: Auto-merge the release PR
-        if: ${{ steps.release.outputs.prs_created == 'true' }}
+      # click. Runs every time (the release-please outputs only flag a NEWLY
+      # created PR, not one it merely updated, which would skip the merge on all
+      # but the first run); instead look up the open release PR by its label.
+      # Merge immediately with --admin (bypasses branch protection on this
+      # sole-authority repo); --auto is avoided on purpose because with no
+      # required checks it just enables auto-merge and leaves the PR open.
+      - name: Merge the open release PR
         env:
           GH_TOKEN: ${{ secrets.RELEASE_PLEASE_PAT }}
-          PR_JSON: ${{ steps.release.outputs.pr }}
           REPO: ${{ github.repository }}
         run: |
-          number=$(echo "$PR_JSON" | jq -r '.number')
+          number=$(gh pr list -R "$REPO" --state open \
+            --label "autorelease: pending" --json number --jq '.[0].number // empty')
+          if [ -z "$number" ]; then echo "no open release PR to merge"; exit 0; fi
           echo "Merging release PR #$number"
           gh pr merge "$number" -R "$REPO" --squash --admin \
-            || gh pr merge "$number" -R "$REPO" --squash \
-            || gh pr merge "$number" -R "$REPO" --squash --auto
+            || gh pr merge "$number" -R "$REPO" --squash
