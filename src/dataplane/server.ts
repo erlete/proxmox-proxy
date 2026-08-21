@@ -57,10 +57,7 @@ function sendJson(res: ServerResponse, status: number, body: unknown): void {
   res.end(buf)
 }
 
-function fwdHeaders(
-  req: IncomingMessage,
-  serviceAuth: string,
-): Record<string, string | string[]> {
+function fwdHeaders(req: IncomingMessage, serviceAuth: string): Record<string, string | string[]> {
   const out: Record<string, string | string[]> = {}
   for (const [k, v] of Object.entries(req.headers)) {
     if (v === undefined || REQ_STRIP.has(k)) continue
@@ -70,7 +67,9 @@ function fwdHeaders(
   return out
 }
 
-function respHeaders(headers: Record<string, string | string[] | undefined>): Record<string, string | string[]> {
+function respHeaders(
+  headers: Record<string, string | string[] | undefined>,
+): Record<string, string | string[]> {
   const out: Record<string, string | string[]> = {}
   for (const [k, v] of Object.entries(headers)) {
     if (v === undefined || RESP_STRIP.has(k.toLowerCase())) continue
@@ -119,7 +118,11 @@ export function createDataPlane(deps: DataPlaneDeps): Server {
 
   const healthBody = (): Record<string, unknown> => ({
     status: health.state.ok && deps.singletonHeld() ? 'ok' : 'degraded',
-    upstream: { ok: health.state.ok, version: health.state.version, checkedAt: health.state.checkedAt },
+    upstream: {
+      ok: health.state.ok,
+      version: health.state.version,
+      checkedAt: health.state.checkedAt,
+    },
     singleton: { enabled: !config.singleton.disabled, held: deps.singletonHeld() },
   })
 
@@ -160,7 +163,14 @@ export function createDataPlane(deps: DataPlaneDeps): Server {
       }
       if (!vmidAllowed(key.vmidRanges, newid)) {
         sendJson(res, 403, { message: `newid ${newid} is outside the ranges of this key` })
-        ops.record({ ...base, status: 403, queueMs: null, durationMs: null, upid: null, note: 'denied-newid' })
+        ops.record({
+          ...base,
+          status: 403,
+          queueMs: null,
+          durationMs: null,
+          upid: null,
+          note: 'denied-newid',
+        })
         return
       }
     }
@@ -183,12 +193,39 @@ export function createDataPlane(deps: DataPlaneDeps): Server {
         const note = err instanceof QueueFullError ? 'queue-full' : 'hold-timeout'
         res.setHeader('retry-after', String(err.retryAfterSec))
         sendJson(res, 429, { message: `cluster busy, retry in ${err.retryAfterSec}s` })
-        ops.record({ ...base, status: 429, queueMs: Date.now() - started, durationMs: null, upid: null, note })
+        ops.record({
+          ...base,
+          status: 429,
+          queueMs: Date.now() - started,
+          durationMs: null,
+          upid: null,
+          note,
+        })
       } else if (err instanceof ClientGoneError) {
-        ops.record({ ...base, status: null, queueMs: Date.now() - started, durationMs: null, upid: null, note: 'client-gone' })
+        ops.record({
+          ...base,
+          status: null,
+          queueMs: Date.now() - started,
+          durationMs: null,
+          upid: null,
+          note: 'client-gone',
+        })
       } else {
-        sendJson(res, 500, { message: 'internal proxy error' })
-        log.error('admission failure', { error: String(err) })
+        // Fail-closed: an internal admission failure must NEVER fall through to
+        // the cluster. Refuse (retryable) and record it; the operation did not
+        // run. Forwarding on internal error would defeat the whole point of
+        // admission, so we bias to a visible refusal over uncontrolled load.
+        res.setHeader('retry-after', '5')
+        sendJson(res, 503, { message: 'admission unavailable, retry shortly' })
+        ops.record({
+          ...base,
+          status: 503,
+          queueMs: Date.now() - started,
+          durationMs: null,
+          upid: null,
+          note: 'admission-error',
+        })
+        log.error('admission failed closed', { error: String(err) })
       }
       return
     }
@@ -230,7 +267,14 @@ export function createDataPlane(deps: DataPlaneDeps): Server {
       grant.release('upstream-error')
       settled = true
       sendJson(res, 502, { message: 'upstream unavailable' })
-      ops.record({ ...base, status: 502, queueMs: grant.queueMs, durationMs: Date.now() - started, upid: null, note: 'upstream-error' })
+      ops.record({
+        ...base,
+        status: 502,
+        queueMs: grant.queueMs,
+        durationMs: Date.now() - started,
+        upid: null,
+        note: 'upstream-error',
+      })
       log.warn('heavy op forward failed', { path: url.pathname, error: String(err) })
     }
   }
@@ -361,8 +405,7 @@ export function createDataPlane(deps: DataPlaneDeps): Server {
         return
       }
 
-      const isNative =
-        url.pathname === '/proxy/whoami' || url.pathname === '/proxy/console-session'
+      const isNative = url.pathname === '/proxy/whoami' || url.pathname === '/proxy/console-session'
       if (!url.pathname.startsWith('/api2/') && !isNative) {
         sendJson(res, 404, { message: 'not found' })
         return
@@ -408,7 +451,9 @@ export function createDataPlane(deps: DataPlaneDeps): Server {
       }
 
       const cls = classify(req.method ?? 'GET', url.pathname)
-      const denied = authorize(req.method ?? 'GET', cls, (vmid) => vmidAllowed(key.vmidRanges, vmid))
+      const denied = authorize(req.method ?? 'GET', cls, (vmid) =>
+        vmidAllowed(key.vmidRanges, vmid),
+      )
       if (denied) {
         sendJson(res, 403, { message: denied })
         ops.record({
@@ -426,8 +471,30 @@ export function createDataPlane(deps: DataPlaneDeps): Server {
         return
       }
 
-      if (cls.opClass) await handleHeavy(req, res, url, cls, key, started)
-      else await handlePass(req, res, url, cls, key, started)
+      if (cls.opClass) {
+        // Fail-closed: having lost the cluster lock we are no longer the
+        // admission authority, so a contended op must not be forwarded blind
+        // (a rival proxy now owns coordination). Reads still pass through
+        // handlePass: observing the cluster is never unsafe.
+        if (!deps.singletonHeld()) {
+          res.setHeader('retry-after', '10')
+          sendJson(res, 503, { message: 'proxy is not the current cluster authority' })
+          ops.record({
+            keyName: key.name,
+            method: req.method ?? '',
+            path: url.pathname,
+            opClass: cls.opClass,
+            vmid: cls.pathVmid ?? cls.upidVmid,
+            status: 503,
+            queueMs: null,
+            durationMs: null,
+            upid: null,
+            note: 'not-authority',
+          })
+          return
+        }
+        await handleHeavy(req, res, url, cls, key, started)
+      } else await handlePass(req, res, url, cls, key, started)
     })().catch((err) => {
       log.error('data plane handler crash', { error: String(err) })
       sendJson(res, 500, { message: 'internal proxy error' })
