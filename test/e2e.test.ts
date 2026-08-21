@@ -199,10 +199,13 @@ test('whoami and health', async () => {
   assert.equal(body.name, 'app-a')
   assert.deepEqual(body.vmidRanges, [[1100000, 1100999]])
 
-  const health = await fetch(`${dataUrl}/proxy/health`)
-  assert.equal(health.status, 200)
-  const h = (await health.json()) as { status: string }
-  assert.equal(h.status, 'ok')
+  // The first upstream health check is async: poll briefly instead of racing it.
+  await waitFor(async () => {
+    const health = await fetch(`${dataUrl}/proxy/health`)
+    assert.equal(health.status, 200)
+    const h = (await health.json()) as { status: string }
+    return h.status === 'ok'
+  })
 })
 
 test('clone newid outside the key ranges is denied', async () => {

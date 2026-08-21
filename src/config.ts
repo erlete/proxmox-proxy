@@ -71,17 +71,13 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     throw new Error('PROXMOX_SERVICE_TOKEN must look like user@realm!tokenid=secret')
   }
 
+  // Both optional: when neither is set, a password is generated on first
+  // boot, persisted (hashed) and printed once. See createApp.
   const adminPasswordHash = optional(env, 'ADMIN_PASSWORD_HASH')
   const adminPassword = optional(env, 'ADMIN_PASSWORD')
-  if (!adminPasswordHash && !adminPassword) {
-    throw new Error('Set ADMIN_PASSWORD_HASH (see: npm run hash-password) or ADMIN_PASSWORD')
-  }
 
-  let sessionSecret = optional(env, 'SESSION_SECRET') ?? ''
-  if (!sessionSecret) {
-    sessionSecret = randomUUID() + randomUUID()
-    console.warn('SESSION_SECRET not set: using a random secret, sessions reset on every boot')
-  }
+  // Empty = auto-generated and persisted on first boot. See createApp.
+  const sessionSecret = optional(env, 'SESSION_SECRET') ?? ''
 
   return {
     upstreamUrl,

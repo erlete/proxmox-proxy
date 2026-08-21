@@ -49,6 +49,23 @@ export function openDb(dataDir: string): Db {
     );
     CREATE INDEX IF NOT EXISTS idx_operations_ts ON operations (ts);
     CREATE INDEX IF NOT EXISTS idx_operations_upid ON operations (upid);
+    CREATE TABLE IF NOT EXISTS meta (
+      key TEXT PRIMARY KEY,
+      value TEXT NOT NULL
+    );
   `)
   return db
+}
+
+export function getMeta(db: Db, key: string): string | null {
+  const row = db.prepare('SELECT value FROM meta WHERE key = ?').get(key) as
+    | { value: string }
+    | undefined
+  return row ? String(row.value) : null
+}
+
+export function setMeta(db: Db, key: string, value: string): void {
+  db.prepare(
+    'INSERT INTO meta (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value',
+  ).run(key, value)
 }

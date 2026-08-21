@@ -44,10 +44,12 @@ PVEAPIToken=svc-proxy@pve!nombre-app=secreto
 ## Despliegue
 
 ```bash
-cp .env.example .env      # editar: upstream, token de servicio, ADMIN_PASSWORD_HASH
-npm run hash-password -- 'mi-password'   # para ADMIN_PASSWORD_HASH
+cp .env.example .env      # solo 2 variables obligatorias: upstream y token de servicio
 docker compose up -d --build
+docker compose logs proxy # primera arrancada: imprime la password del panel UNA vez
 ```
+
+Todo lo demás se autogenera y persiste (password del panel, secreto de sesión) o tiene un default razonable; ver la seccion avanzada comentada de [.env.example](.env.example). La password del panel puede fijarse con `ADMIN_PASSWORD` o, mejor, `ADMIN_PASSWORD_HASH` (`npm run hash-password -- 'mi-password'`).
 
 Panel en `https://<host>:8443` (allowlist de IPs vía `PANEL_ALLOWLIST`). Las apps apuntan su cliente Proxmox a `https://<PROXY_DOMAIN>` con su clave.
 
