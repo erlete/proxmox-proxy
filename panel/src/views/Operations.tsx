@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState, type ReactElement } from 'react'
-import { api, formatMs, formatTs } from '../api'
+import { RefreshCw } from 'lucide-react'
+import { api, formatAgo, formatMs, formatTs } from '../api'
 import type { paths } from '../api/schema'
 
 type Operations = paths['/api/operations']['get']['responses'][200]['content']['application/json']
@@ -9,6 +10,12 @@ function statusBadge(row: Row): ReactElement {
   if (row.status == null) return <span className="badge">-</span>
   const cls = row.status < 400 ? 'ok' : row.status === 429 ? 'warn' : 'err'
   return <span className={`badge ${cls}`}>{row.status}</span>
+}
+
+function methodChip(method: string): ReactElement {
+  const cls =
+    method === 'GET' ? 'chip' : method === 'DELETE' ? 'chip err' : method === 'POST' ? 'chip accent' : 'chip warn'
+  return <span className={cls}>{method}</span>
 }
 
 export function Operations(): ReactElement {
@@ -47,12 +54,13 @@ export function Operations(): ReactElement {
           <option value="delete">delete</option>
           <option value="suspend">suspend</option>
         </select>
-        <input placeholder="filter by key" value={key} onChange={(e) => setKey(e.target.value)} />
+        <input placeholder="filter by app" value={key} onChange={(e) => setKey(e.target.value)} />
         <label className="check">
           <input type="checkbox" checked={auto} onChange={(e) => setAuto(e.target.checked)} />
           auto-refresh
         </label>
-        <button className="btn" onClick={() => void load()}>
+        <button className="btn icon-btn" onClick={() => void load()}>
+          <RefreshCw size={14} />
           Refresh
         </button>
       </div>
@@ -62,8 +70,8 @@ export function Operations(): ReactElement {
         <table>
           <thead>
             <tr>
-              <th>time</th>
-              <th>key</th>
+              <th>when</th>
+              <th>app</th>
               <th>request</th>
               <th>class</th>
               <th>vmid</th>
@@ -77,15 +85,19 @@ export function Operations(): ReactElement {
           <tbody>
             {rows.map((row) => (
               <tr key={row.id}>
-                <td className="nowrap">{formatTs(row.ts)}</td>
-                <td>{row.keyName}</td>
-                <td className="mono path" title={row.path}>
-                  {row.method} {row.path.replace('/api2/json', '')}
+                <td className="nowrap" title={formatTs(row.ts)}>
+                  {formatAgo(row.ts)} ago
                 </td>
-                <td>{row.opClass ?? '-'}</td>
+                <td className="strong">{row.keyName}</td>
+                <td className="mono path" title={row.path}>
+                  {methodChip(row.method)} {row.path.replace('/api2/json', '')}
+                </td>
+                <td>{row.opClass ? <span className="chip accent">{row.opClass}</span> : '-'}</td>
                 <td className="mono">{row.vmid ?? '-'}</td>
                 <td>{statusBadge(row)}</td>
-                <td>{formatMs(row.queueMs)}</td>
+                <td className={row.queueMs != null && row.queueMs > 1000 ? 'warn-text' : ''}>
+                  {formatMs(row.queueMs)}
+                </td>
                 <td>{formatMs(row.durationMs)}</td>
                 <td>{formatMs(row.taskMs)}</td>
                 <td className="muted">{row.note ?? '-'}</td>

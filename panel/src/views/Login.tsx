@@ -1,4 +1,5 @@
 import { useState, type FormEvent, type ReactElement } from 'react'
+import { Waypoints } from 'lucide-react'
 import { api } from '../api'
 
 export function Login({ onSuccess }: { onSuccess: () => void }): ReactElement {
@@ -21,9 +22,12 @@ export function Login({ onSuccess }: { onSuccess: () => void }): ReactElement {
   return (
     <div className="login-wrap">
       <form className="login-card" onSubmit={(e) => void submit(e)}>
-        <div className="brand big">
-          <span className="brand-dot" />
-          proxmox-proxy
+        <div className="login-brand">
+          <Waypoints size={40} strokeWidth={2} className="brand-icon" />
+          <div>
+            <div className="login-title">proxmox-proxy</div>
+            <div className="muted">cluster control plane</div>
+          </div>
         </div>
         <label>
           Username
