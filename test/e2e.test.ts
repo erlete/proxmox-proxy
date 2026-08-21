@@ -36,7 +36,7 @@ function fakeUpstream(): Server {
 
       if (p === '/api2/json/version') return json(200, { version: '8.4.1' })
 
-      if (p === '/api2/json/pools/testlock') {
+      if (p === '/api2/json/pools/testlock' && req.method === 'GET') {
         if (poolComment == null) return json(500, null)
         return json(200, { comment: poolComment, members: [] })
       }
@@ -226,13 +226,14 @@ test('whoami and health', async () => {
   assert.equal(body.name, 'app-a')
   assert.deepEqual(body.vmidRanges, [[1100000, 1100999]])
 
-  // The first upstream health check is async: poll briefly instead of racing it.
+  // The first upstream health check is async: poll instead of racing it
+  // (generous budget, the suite runs files in parallel).
   await waitFor(async () => {
     const health = await fetch(`${dataUrl}/proxy/health`)
     assert.equal(health.status, 200)
     const h = (await health.json()) as { status: string }
     return h.status === 'ok'
-  })
+  }, 10_000)
 })
 
 test('clone newid outside the key ranges is denied', async () => {
@@ -307,4 +308,20 @@ test('openapi document is served', async () => {
   const spec = (await res.json()) as { openapi: string; paths: Record<string, unknown> }
   assert.ok(spec.openapi.startsWith('3.1'))
   assert.ok(spec.paths['/api/keys'])
+})
+
+// Must run last: it shuts the app down. Regression test for the deploy bug
+// where a live SSE stream kept the server from closing and the process died
+// before releasing the cluster lock, blocking the successor for staleMs.
+test('shutdown stays fast with an open SSE stream and releases the lock', async () => {
+  const sse = await fetch(`${adminUrl}/api/events`, { headers: { cookie } })
+  assert.equal(sse.status, 200)
+
+  const started = Date.now()
+  await app.close()
+  const elapsed = Date.now() - started
+  assert.ok(elapsed < 5000, `close took ${elapsed}ms with an SSE client attached`)
+
+  const marker = JSON.parse(poolComment ?? '{}') as { t: number }
+  assert.equal(marker.t, 0, 'lock marker marked stale for instant successor takeover')
 })

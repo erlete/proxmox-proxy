@@ -65,7 +65,13 @@ export async function buildAdminServer(deps: AdminDeps): Promise<FastifyInstance
   const version = readVersion()
   const attempts = new Map<string, LoginAttempts>()
 
-  const app = Fastify({ logger: false, trustProxy: true }).withTypeProvider<TypeBoxTypeProvider>()
+  // forceCloseConnections: live SSE streams must never block a shutdown
+  // (a hanging close would kill the process before releasing the cluster lock).
+  const app = Fastify({
+    logger: false,
+    trustProxy: true,
+    forceCloseConnections: true,
+  }).withTypeProvider<TypeBoxTypeProvider>()
 
   await app.register(fastifyCookie)
   await app.register(fastifySwagger, {

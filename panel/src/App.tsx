@@ -24,7 +24,7 @@ type Page = (typeof PAGES)[number]['id']
 export function App(): ReactElement {
   const [auth, setAuth] = useState<Auth>('loading')
   const [page, setPage] = useState<Page>('overview')
-  const { queues, connected } = useLive(auth === 'ready')
+  const { queues } = useLive(auth === 'ready')
   const busy = busyCount(queues)
 
   useEffect(() => {
@@ -60,10 +60,6 @@ export function App(): ReactElement {
           ))}
         </nav>
         <div className="side-foot">
-          <div className="side-status">
-            <span className={connected ? 'live-dot on' : 'live-dot'} />
-            {connected ? 'live' : 'reconnecting'}
-          </div>
           <button
             className="nav-item logout"
             onClick={() => {

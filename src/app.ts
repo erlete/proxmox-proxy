@@ -128,12 +128,18 @@ export async function createApp(config: Config, onFatal?: () => void): Promise<A
   const admin = await buildAdminServer({ config, keys, settings, admission, health, ops, singletonHeld })
   await admin.listen({ port: config.adminPort, host: config.bindHost })
 
+  let closed = false
   const close = async (): Promise<void> => {
+    if (closed) return
+    closed = true
     admission.stop()
     health.stop()
-    await admin.close()
-    await new Promise<void>((resolve) => dataServer.close(() => resolve()))
+    // Release the cluster lock FIRST: server close can be slowed down by
+    // lingering connections and the successor must be able to take over.
     if (singleton) await singleton.release()
+    const dataClosed = new Promise<void>((resolve) => dataServer.close(() => resolve()))
+    dataServer.closeAllConnections()
+    await Promise.all([admin.close(), dataClosed])
     await upstream.close().catch(() => {})
     db.close()
   }
