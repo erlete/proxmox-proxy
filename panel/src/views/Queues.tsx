@@ -1,7 +1,53 @@
 import { useEffect, useState, type ReactElement } from 'react'
-import { Copy, Layers } from 'lucide-react'
-import { formatAgo } from '../api'
+import { CircleStop, Copy, Layers } from 'lucide-react'
+import { api, formatAgo } from '../api'
 import { useLive } from '../live'
+
+/**
+ * Red button: stop a running Proxmox task. Two-step to prevent a fat-finger
+ * kill (the first click arms it, the second fires); the armed state disarms
+ * itself after a moment. The live stream refreshes the row on its own once the
+ * task poller frees the slot, so there is nothing to reload here.
+ */
+function StopButton({ upid }: { upid: string }): ReactElement {
+  const [state, setState] = useState<'idle' | 'confirm' | 'stopping' | 'done' | 'error'>('idle')
+
+  useEffect(() => {
+    if (state !== 'confirm') return
+    const t = setTimeout(() => setState('idle'), 3000)
+    return () => clearTimeout(t)
+  }, [state])
+
+  const stop = async (): Promise<void> => {
+    setState('stopping')
+    const { error } = await api.POST('/api/tasks/stop', { body: { upid } })
+    setState(error ? 'error' : 'done')
+  }
+
+  if (state === 'stopping' || state === 'done')
+    return <span className="muted small">stopping…</span>
+  if (state === 'error')
+    return (
+      <button className="btn small danger icon-btn" onClick={() => setState('confirm')}>
+        <CircleStop size={12} /> failed, retry
+      </button>
+    )
+  if (state === 'confirm')
+    return (
+      <button className="btn small danger-solid icon-btn" onClick={() => void stop()}>
+        <CircleStop size={12} /> confirm
+      </button>
+    )
+  return (
+    <button
+      className="btn small danger icon-btn"
+      onClick={() => setState('confirm')}
+      title="stop this task"
+    >
+      <CircleStop size={12} /> stop
+    </button>
+  )
+}
 
 export function Queues(): ReactElement {
   const { queues, connected } = useLive()
@@ -18,7 +64,10 @@ export function Queues(): ReactElement {
     <div>
       <h1>
         Queues
-        <span className={connected ? 'live-dot on' : 'live-dot'} title={connected ? 'live' : 'reconnecting'} />
+        <span
+          className={connected ? 'live-dot on' : 'live-dot'}
+          title={connected ? 'live' : 'reconnecting'}
+        />
       </h1>
       {queues.classes.map((cls) => {
         const pct = cls.cap > 0 ? Math.min(100, (cls.running.length / cls.cap) * 100) : 100
@@ -32,6 +81,9 @@ export function Queues(): ReactElement {
                 <span className="muted">
                   {cls.running.length} / {cls.cap} running
                   {cls.waiting.length > 0 ? ` · ${cls.waiting.length} waiting` : ''}
+                  {cls.outOfBand > 0
+                    ? ` · -${cls.outOfBand} out-of-band (cap ${cls.effectiveCap})`
+                    : ''}
                 </span>
                 <div className="meter slim">
                   <div
@@ -53,6 +105,7 @@ export function Queues(): ReactElement {
                     <th>node</th>
                     <th>task</th>
                     <th>elapsed</th>
+                    <th>action</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -81,6 +134,9 @@ export function Queues(): ReactElement {
                         )}
                       </td>
                       <td>{formatAgo(r.taskStartedAt ?? r.grantedAt)}</td>
+                      <td>
+                        {r.upid ? <StopButton upid={r.upid} /> : <span className="muted">-</span>}
+                      </td>
                     </tr>
                   ))}
                   {cls.waiting.map((w) => (
@@ -93,6 +149,7 @@ export function Queues(): ReactElement {
                       <td>-</td>
                       <td>-</td>
                       <td>{formatAgo(w.enqueuedAt)}</td>
+                      <td>-</td>
                     </tr>
                   ))}
                 </tbody>

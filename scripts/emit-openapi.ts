@@ -7,6 +7,7 @@ import { openDb } from '../src/db.js'
 import { KeyStore } from '../src/keys/store.js'
 import { OpsLog } from '../src/ops.js'
 import { SETTINGS_DEFAULTS, SettingsStore } from '../src/settings.js'
+import type { Upstream } from '../src/upstream/client.js'
 import type { HealthMonitor } from '../src/upstream/health.js'
 
 // Builds the admin app against stub deps just to emit the OpenAPI document.
@@ -35,6 +36,7 @@ const admission = new Admission(null, {
   taskTimeoutMs: SETTINGS_DEFAULTS.taskTimeoutMs,
 })
 const health = { state: { ok: false, version: null, checkedAt: 0, error: null } } as HealthMonitor
+const upstream = { api: () => Promise.resolve([]) } as unknown as Upstream
 
 const app = await buildAdminServer({
   config,
@@ -43,6 +45,7 @@ const app = await buildAdminServer({
   admission,
   health,
   ops,
+  upstream,
   singletonHeld: () => false,
 })
 await app.ready()

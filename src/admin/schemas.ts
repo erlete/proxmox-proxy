@@ -150,6 +150,39 @@ export const SettingsReply = Type.Object({
   defaults: SettingsSchema,
 })
 
+export const TaskStopBody = Type.Object({
+  /** Full UPID of the running task to stop; the node is parsed from it. */
+  upid: Type.String({ minLength: 1 }),
+})
+
+export const TaskStopReply = Type.Object({
+  upid: Type.String(),
+  node: Type.String(),
+  stopped: Type.Boolean(),
+})
+
+export const InventoryVmSchema = Type.Object({
+  vmid: Type.Integer(),
+  node: Type.String(),
+  name: Type.String(),
+  status: Type.String(),
+  type: Type.String(),
+})
+
+export const InventoryAppSchema = Type.Object({
+  name: Type.String(),
+  vmidRanges: Type.Array(VmidRangeSchema),
+  vms: Type.Array(InventoryVmSchema),
+})
+
+export const InventoryReply = Type.Object({
+  /** VMs grouped by the app whose key ranges own their VMID. */
+  apps: Type.Array(InventoryAppSchema),
+  /** Live VMs that fall outside every key range: manual or orphaned. */
+  unassigned: Type.Array(InventoryVmSchema),
+  upstreamOk: Type.Boolean(),
+})
+
 export type Key = Static<typeof KeySchema>
 export type Operation = Static<typeof OperationSchema>
 export type Queues = Static<typeof QueuesReply>

@@ -1,8 +1,18 @@
 import { useEffect, useState, type ReactElement } from 'react'
-import { Boxes, Gauge, History, Layers, LogOut, SlidersHorizontal, Waypoints } from 'lucide-react'
+import {
+  Boxes,
+  Gauge,
+  HardDrive,
+  History,
+  Layers,
+  LogOut,
+  SlidersHorizontal,
+  Waypoints,
+} from 'lucide-react'
 import { api } from './api'
 import { busyCount, useLive } from './live'
 import { Apps } from './views/Apps'
+import { Inventory } from './views/Inventory'
 import { Login } from './views/Login'
 import { Operations } from './views/Operations'
 import { Overview } from './views/Overview'
@@ -16,6 +26,7 @@ const PAGES = [
   { id: 'queues', label: 'Queues', icon: Layers },
   { id: 'operations', label: 'Operations', icon: History },
   { id: 'apps', label: 'Apps', icon: Boxes },
+  { id: 'inventory', label: 'Inventory', icon: HardDrive },
   { id: 'settings', label: 'Settings', icon: SlidersHorizontal },
 ] as const
 
@@ -76,6 +87,7 @@ export function App(): ReactElement {
         {page === 'queues' && <Queues />}
         {page === 'operations' && <Operations />}
         {page === 'apps' && <Apps />}
+        {page === 'inventory' && <Inventory />}
         {page === 'settings' && <Settings />}
       </main>
     </div>

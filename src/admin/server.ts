@@ -7,17 +7,19 @@ import type { TypeBoxTypeProvider } from '@fastify/type-provider-typebox'
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from 'fastify'
 import type { Admission } from '../admission/queue.js'
 import type { Config } from '../config.js'
-import type { KeyStore, VmidRange } from '../keys/store.js'
+import { vmidAllowed, type KeyStore, type VmidRange } from '../keys/store.js'
 import { log } from '../log.js'
 import type { OpsLog } from '../ops.js'
 import { verifyPassword } from '../password.js'
 import { signSession, verifySession } from '../session.js'
 import { SETTINGS_DEFAULTS, type Settings, type SettingsStore } from '../settings.js'
+import { UpstreamError, type Upstream } from '../upstream/client.js'
 import type { HealthMonitor } from '../upstream/health.js'
 import {
   CreateKeyBody,
   ErrorReply,
   HealthReply,
+  InventoryReply,
   KeyListReply,
   LoginBody,
   MeReply,
@@ -28,6 +30,8 @@ import {
   SettingsPatch,
   SettingsReply,
   StatusReply,
+  TaskStopBody,
+  TaskStopReply,
   TokenReply,
 } from './schemas.js'
 
@@ -38,7 +42,32 @@ export interface AdminDeps {
   admission: Admission
   health: HealthMonitor
   ops: OpsLog
+  upstream: Upstream
   singletonHeld: () => boolean
+}
+
+/** A UPID is `UPID:node:...`; the node is what a task-stop call needs. */
+function nodeFromUpid(upid: string): string | null {
+  const parts = upid.split(':')
+  if (parts[0] !== 'UPID') return null
+  const node = parts[1]
+  return /^[A-Za-z0-9._-]{1,63}$/.test(node) ? node : null
+}
+
+interface ClusterVm {
+  vmid: number
+  node: string
+  name?: string
+  status?: string
+  type?: string
+}
+
+interface InventoryVm {
+  vmid: number
+  node: string
+  name: string
+  status: string
+  type: string
 }
 
 const SESSION_COOKIE = 'pp_session'
@@ -61,9 +90,26 @@ interface LoginAttempts {
 }
 
 export async function buildAdminServer(deps: AdminDeps): Promise<FastifyInstance> {
-  const { config, keys, settings, admission, health, ops } = deps
+  const { config, keys, settings, admission, health, ops, upstream } = deps
   const version = readVersion()
   const attempts = new Map<string, LoginAttempts>()
+
+  // Inventory hits the cluster; a short cache keeps panel polling cheap.
+  let invCache: { at: number; vms: InventoryVm[] } | null = null
+  const INVENTORY_TTL_MS = 5_000
+  const loadClusterVms = async (): Promise<InventoryVm[]> => {
+    if (invCache && Date.now() - invCache.at < INVENTORY_TTL_MS) return invCache.vms
+    const rows = await upstream.api<ClusterVm[]>('GET', '/cluster/resources?type=vm')
+    const vms: InventoryVm[] = rows.map((r) => ({
+      vmid: r.vmid,
+      node: r.node,
+      name: r.name ?? '',
+      status: r.status ?? 'unknown',
+      type: r.type ?? 'qemu',
+    }))
+    invCache = { at: Date.now(), vms }
+    return vms
+  }
 
   // forceCloseConnections: live SSE streams must never block a shutdown
   // (a hanging close would kill the process before releasing the cluster lock).
@@ -271,6 +317,65 @@ export async function buildAdminServer(deps: AdminDeps): Promise<FastifyInstance
       }
     },
   )
+
+  // Red button: stop a running Proxmox task (a wedged clone, a stray op). The
+  // admission task poller notices the stop on its next tick and frees the slot.
+  app.post(
+    '/api/tasks/stop',
+    {
+      schema: {
+        body: TaskStopBody,
+        response: { 200: TaskStopReply, 400: ErrorReply, 502: ErrorReply },
+      },
+    },
+    async (req, reply) => {
+      const { upid } = req.body
+      const node = nodeFromUpid(upid)
+      if (!node) return reply.code(400).send({ message: 'malformed UPID' })
+      try {
+        await upstream.api('DELETE', `/nodes/${node}/tasks/${encodeURIComponent(upid)}`)
+        log.warn('task stopped from the panel', { upid, node })
+        ops.record({
+          keyName: '(admin)',
+          method: 'DELETE',
+          path: `/nodes/${node}/tasks/${upid}`,
+          opClass: null,
+          vmid: null,
+          status: 200,
+          queueMs: null,
+          durationMs: null,
+          upid,
+          note: 'stopped-by-admin',
+        })
+        return reply.send({ upid, node, stopped: true })
+      } catch (err) {
+        const message = err instanceof UpstreamError ? err.message : String(err)
+        return reply.code(502).send({ message })
+      }
+    },
+  )
+
+  // Per-app cluster inventory: which live VMs each app's key ranges own, plus
+  // the VMs that belong to no range (manual or orphaned). Sourced from the
+  // cluster itself, so it surfaces residue an app may have lost track of.
+  app.get('/api/inventory', { schema: { response: { 200: InventoryReply } } }, async () => {
+    let vms: InventoryVm[]
+    try {
+      vms = await loadClusterVms()
+    } catch (err) {
+      log.warn('inventory read failed', { error: String(err) })
+      return { apps: [], unassigned: [], upstreamOk: false }
+    }
+    const apps = keys.list().map((k) => ({
+      name: k.name,
+      vmidRanges: k.vmidRanges,
+      vms: vms.filter((vm) => vmidAllowed(k.vmidRanges as VmidRange[], vm.vmid)),
+    }))
+    const assigned = new Set<number>()
+    for (const app of apps) for (const vm of app.vms) assigned.add(vm.vmid)
+    const unassigned = vms.filter((vm) => !assigned.has(vm.vmid))
+    return { apps, unassigned, upstreamOk: true }
+  })
 
   // Live queue/status stream for the panel.
   app.get('/api/events', (req, reply) => {

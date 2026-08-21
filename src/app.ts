@@ -137,6 +137,7 @@ export async function createApp(config: Config, onFatal?: () => void): Promise<A
     admission,
     health,
     ops,
+    upstream,
     singletonHeld,
   })
   await admin.listen({ port: config.adminPort, host: config.bindHost })

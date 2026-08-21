@@ -39,6 +39,21 @@ function fakeUpstream(): Server {
       // Backstop poll: no out-of-band cluster load in this fixture.
       if (p === '/api2/json/cluster/tasks') return json(200, [])
 
+      // Cluster inventory: one VM inside app-a's range, one outside it.
+      if (p === '/api2/json/cluster/resources') {
+        return json(200, [
+          { vmid: 1100100, node: 'n1', name: 'app-vm', status: 'running', type: 'qemu' },
+          { vmid: 4242, node: 'n1', name: 'stray-vm', status: 'stopped', type: 'qemu' },
+        ])
+      }
+
+      // Red button: stopping a running task (DELETE, no /status suffix).
+      const delTask = /^\/api2\/json\/nodes\/n1\/tasks\/([^/]+)$/.exec(p)
+      if (delTask && req.method === 'DELETE') {
+        stoppedTasks.add(decodeURIComponent(delTask[1]))
+        return json(200, `UPID:n1:0:0:0:stop:0:root@pam:`)
+      }
+
       if (p === '/api2/json/access/ticket' && req.method === 'POST') {
         const params = new URLSearchParams(Buffer.concat(chunks).toString())
         if (
@@ -377,6 +392,47 @@ test('openapi document is served', async () => {
   const spec = (await res.json()) as { openapi: string; paths: Record<string, unknown> }
   assert.ok(spec.openapi.startsWith('3.1'))
   assert.ok(spec.paths['/api/keys'])
+})
+
+test('per-app inventory groups cluster VMs by key ranges', async () => {
+  const res = await fetch(`${adminUrl}/api/inventory`, { headers: { cookie } })
+  assert.equal(res.status, 200)
+  const body = (await res.json()) as {
+    apps: { name: string; vms: { vmid: number }[] }[]
+    unassigned: { vmid: number }[]
+    upstreamOk: boolean
+  }
+  assert.equal(body.upstreamOk, true)
+  const appA = body.apps.find((a) => a.name === 'app-a')
+  assert.deepEqual(
+    appA?.vms.map((v) => v.vmid),
+    [1100100],
+  )
+  // The out-of-range VM belongs to no key: it surfaces as unassigned residue.
+  assert.deepEqual(
+    body.unassigned.map((v) => v.vmid),
+    [4242],
+  )
+})
+
+test('red button stops a running task through the proxy', async () => {
+  const upid = 'UPID:n1:00099:0:0:qmclone:1100200:root@pam:'
+  const res = await fetch(`${adminUrl}/api/tasks/stop`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', cookie },
+    body: JSON.stringify({ upid }),
+  })
+  assert.equal(res.status, 200)
+  const body = (await res.json()) as { node: string; stopped: boolean }
+  assert.equal(body.node, 'n1')
+  assert.equal(body.stopped, true)
+
+  const bad = await fetch(`${adminUrl}/api/tasks/stop`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', cookie },
+    body: JSON.stringify({ upid: 'not-a-upid' }),
+  })
+  assert.equal(bad.status, 400)
 })
 
 // Must run last: it shuts the app down. Regression test for the deploy bug

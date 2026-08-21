@@ -1309,6 +1309,214 @@
         }
       }
     },
+    "/api/tasks/stop": {
+      "post": {
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "upid"
+                ],
+                "properties": {
+                  "upid": {
+                    "minLength": 1,
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "upid",
+                    "node",
+                    "stopped"
+                  ],
+                  "properties": {
+                    "upid": {
+                      "type": "string"
+                    },
+                    "node": {
+                      "type": "string"
+                    },
+                    "stopped": {
+                      "type": "boolean"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "message"
+                  ],
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "message"
+                  ],
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/inventory": {
+      "get": {
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "apps",
+                    "unassigned",
+                    "upstreamOk"
+                  ],
+                  "properties": {
+                    "apps": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "name",
+                          "vmidRanges",
+                          "vms"
+                        ],
+                        "properties": {
+                          "name": {
+                            "type": "string"
+                          },
+                          "vmidRanges": {
+                            "type": "array",
+                            "items": {
+                              "type": "array",
+                              "items": [
+                                {
+                                  "minimum": 100,
+                                  "type": "integer"
+                                },
+                                {
+                                  "minimum": 100,
+                                  "type": "integer"
+                                }
+                              ],
+                              "additionalItems": false,
+                              "minItems": 2,
+                              "maxItems": 2
+                            }
+                          },
+                          "vms": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "required": [
+                                "vmid",
+                                "node",
+                                "name",
+                                "status",
+                                "type"
+                              ],
+                              "properties": {
+                                "vmid": {
+                                  "type": "integer"
+                                },
+                                "node": {
+                                  "type": "string"
+                                },
+                                "name": {
+                                  "type": "string"
+                                },
+                                "status": {
+                                  "type": "string"
+                                },
+                                "type": {
+                                  "type": "string"
+                                }
+                              }
+                            }
+                          }
+                        }
+                      }
+                    },
+                    "unassigned": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "vmid",
+                          "node",
+                          "name",
+                          "status",
+                          "type"
+                        ],
+                        "properties": {
+                          "vmid": {
+                            "type": "integer"
+                          },
+                          "node": {
+                            "type": "string"
+                          },
+                          "name": {
+                            "type": "string"
+                          },
+                          "status": {
+                            "type": "string"
+                          },
+                          "type": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    },
+                    "upstreamOk": {
+                      "type": "boolean"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/events": {
       "get": {
         "responses": {
