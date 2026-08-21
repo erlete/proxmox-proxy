@@ -3,13 +3,18 @@ import { randomUUID } from 'node:crypto'
 export const OP_CLASSES = ['clone', 'delete', 'suspend'] as const
 export type OpClassName = (typeof OP_CLASSES)[number]
 
+/**
+ * Boot-level configuration only: where the upstream is, how to authenticate,
+ * where to bind, and the singleton lock. Runtime tunables (admission caps,
+ * queue bounds, session TTL, websocket base, ops ring) are panel-managed
+ * settings persisted in SQLite: see settings.ts.
+ */
 export interface Config {
   upstreamUrl: URL
   upstreamCaPath: string | null
   upstreamInsecure: boolean
   /** Normalized "user@realm!tokenid=secret", no PVEAPIToken= prefix. */
   serviceToken: string
-  publicWsUrl: string
   keysTokenUser: string
   dataDir: string
   bindHost: string
@@ -19,21 +24,12 @@ export interface Config {
   adminPasswordHash: string | null
   adminPassword: string | null
   sessionSecret: string
-  sessionTtlMs: number
   singleton: {
     disabled: boolean
     poolId: string
     heartbeatMs: number
     staleMs: number
   }
-  admission: {
-    caps: Record<OpClassName, number>
-    maxQueue: number
-    maxHoldMs: number
-    taskPollMs: number
-    taskTimeoutMs: number
-  }
-  opsRingMax: number
   instanceId: string
 }
 
@@ -84,7 +80,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     upstreamCaPath: optional(env, 'PROXMOX_UPSTREAM_TLS_CA'),
     upstreamInsecure: bool(env, 'PROXMOX_UPSTREAM_TLS_INSECURE'),
     serviceToken,
-    publicWsUrl: optional(env, 'PROXMOX_PUBLIC_WS_URL') ?? upstreamUrl.origin,
     keysTokenUser: optional(env, 'KEYS_TOKEN_USER') ?? 'svc-proxy@pve',
     dataDir: optional(env, 'DATA_DIR') ?? './data',
     bindHost: optional(env, 'BIND_HOST') ?? '0.0.0.0',
@@ -94,25 +89,12 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     adminPasswordHash,
     adminPassword,
     sessionSecret,
-    sessionTtlMs: int(env, 'SESSION_TTL_HOURS', 12) * 3_600_000,
     singleton: {
       disabled: bool(env, 'SINGLETON_DISABLED'),
       poolId: optional(env, 'SINGLETON_POOL') ?? 'proxyguard',
       heartbeatMs: int(env, 'SINGLETON_HEARTBEAT_SECONDS', 60) * 1000,
       staleMs: int(env, 'SINGLETON_STALE_SECONDS', 300) * 1000,
     },
-    admission: {
-      caps: {
-        clone: int(env, 'ADMISSION_CLONE_CAP', 2),
-        delete: int(env, 'ADMISSION_DELETE_CAP', 1),
-        suspend: int(env, 'ADMISSION_SUSPEND_CAP', 1),
-      },
-      maxQueue: int(env, 'ADMISSION_MAX_QUEUE', 32),
-      maxHoldMs: int(env, 'ADMISSION_MAX_HOLD_MS', 25_000),
-      taskPollMs: int(env, 'ADMISSION_TASK_POLL_MS', 2_000),
-      taskTimeoutMs: int(env, 'ADMISSION_TASK_TIMEOUT_MS', 600_000),
-    },
-    opsRingMax: int(env, 'OPS_RING_MAX', 20_000),
     instanceId: randomUUID(),
   }
 }

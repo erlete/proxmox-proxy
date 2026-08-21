@@ -6,6 +6,7 @@ import { loadConfig } from '../src/config.js'
 import { openDb } from '../src/db.js'
 import { KeyStore } from '../src/keys/store.js'
 import { OpsLog } from '../src/ops.js'
+import { SETTINGS_DEFAULTS, SettingsStore } from '../src/settings.js'
 import type { HealthMonitor } from '../src/upstream/health.js'
 
 // Builds the admin app against stub deps just to emit the OpenAPI document.
@@ -20,13 +21,25 @@ const config = loadConfig({
 
 const db = openDb(':memory:')
 const keys = new KeyStore(db, config.keysTokenUser)
-const ops = new OpsLog(db, config.opsRingMax)
-const admission = new Admission(null, config.admission)
+const settings = new SettingsStore(db)
+const ops = new OpsLog(db, () => SETTINGS_DEFAULTS.opsRingMax)
+const admission = new Admission(null, {
+  caps: {
+    clone: SETTINGS_DEFAULTS.cloneCap,
+    delete: SETTINGS_DEFAULTS.deleteCap,
+    suspend: SETTINGS_DEFAULTS.suspendCap,
+  },
+  maxQueue: SETTINGS_DEFAULTS.maxQueue,
+  maxHoldMs: SETTINGS_DEFAULTS.maxHoldMs,
+  taskPollMs: SETTINGS_DEFAULTS.taskPollMs,
+  taskTimeoutMs: SETTINGS_DEFAULTS.taskTimeoutMs,
+})
 const health = { state: { ok: false, version: null, checkedAt: 0, error: null } } as HealthMonitor
 
 const app = await buildAdminServer({
   config,
   keys,
+  settings,
   admission,
   health,
   ops,

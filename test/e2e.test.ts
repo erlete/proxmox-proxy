@@ -107,10 +107,6 @@ before(async () => {
     DATA_PORT: '0',
     ADMIN_PORT: '0',
     SINGLETON_POOL: 'testlock',
-    ADMISSION_CLONE_CAP: '1',
-    ADMISSION_MAX_QUEUE: '2',
-    ADMISSION_MAX_HOLD_MS: '3000',
-    ADMISSION_TASK_POLL_MS: '50',
   })
   app = await createApp(config)
   dataUrl = `http://127.0.0.1:${(app.dataServer.address() as AddressInfo).port}`
@@ -157,6 +153,37 @@ test('admin login and key issuance', async () => {
   assert.equal(created.status, 201)
   appToken = ((await created.json()) as { token: string }).token
   assert.ok(appToken.startsWith('PVEAPIToken=svc-proxy@pve!app-a='))
+})
+
+test('runtime settings are panel-managed and hot-applied', async () => {
+  const before = await fetch(`${adminUrl}/api/settings`, { headers: { cookie } })
+  assert.equal(before.status, 200)
+  const { settings, defaults } = (await before.json()) as {
+    settings: { cloneCap: number }
+    defaults: { cloneCap: number }
+  }
+  assert.equal(settings.cloneCap, defaults.cloneCap)
+
+  const updated = await fetch(`${adminUrl}/api/settings`, {
+    method: 'PUT',
+    headers: { 'content-type': 'application/json', cookie },
+    body: JSON.stringify({ cloneCap: 1, maxQueue: 2, maxHoldMs: 3000, taskPollMs: 250 }),
+  })
+  assert.equal(updated.status, 200)
+  const after = (await updated.json()) as { settings: { cloneCap: number; taskPollMs: number } }
+  assert.equal(after.settings.cloneCap, 1)
+  assert.equal(after.settings.taskPollMs, 250)
+
+  const bad = await fetch(`${adminUrl}/api/settings`, {
+    method: 'PUT',
+    headers: { 'content-type': 'application/json', cookie },
+    body: JSON.stringify({ taskPollMs: 1 }),
+  })
+  assert.equal(bad.status, 400)
+
+  // The hot-applied cap must be visible in the queue snapshot.
+  const snap = await queuesSnapshot()
+  assert.equal((snap.classes.find((c) => c.name === 'clone') as { cap?: number }).cap, 1)
 })
 
 test('data plane auth and scoping', async () => {

@@ -124,6 +124,26 @@ export const HealthReply = Type.Object({
   singletonHeld: Type.Boolean(),
 })
 
+export const SettingsSchema = Type.Object({
+  cloneCap: Type.Integer({ minimum: 0, maximum: 64 }),
+  deleteCap: Type.Integer({ minimum: 0, maximum: 64 }),
+  suspendCap: Type.Integer({ minimum: 0, maximum: 64 }),
+  maxQueue: Type.Integer({ minimum: 0, maximum: 1000 }),
+  maxHoldMs: Type.Integer({ minimum: 1000, maximum: 120000 }),
+  taskPollMs: Type.Integer({ minimum: 250, maximum: 60000 }),
+  taskTimeoutMs: Type.Integer({ minimum: 10000, maximum: 86400000 }),
+  opsRingMax: Type.Integer({ minimum: 100, maximum: 1000000 }),
+  sessionTtlHours: Type.Integer({ minimum: 1, maximum: 168 }),
+  publicWsUrl: Type.String({ maxLength: 200 }),
+})
+
+export const SettingsPatch = Type.Partial(SettingsSchema)
+
+export const SettingsReply = Type.Object({
+  settings: SettingsSchema,
+  defaults: SettingsSchema,
+})
+
 export type Key = Static<typeof KeySchema>
 export type Operation = Static<typeof OperationSchema>
 export type Queues = Static<typeof QueuesReply>

@@ -540,6 +540,136 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            settings: {
+                                cloneCap: number;
+                                deleteCap: number;
+                                suspendCap: number;
+                                maxQueue: number;
+                                maxHoldMs: number;
+                                taskPollMs: number;
+                                taskTimeoutMs: number;
+                                opsRingMax: number;
+                                sessionTtlHours: number;
+                                publicWsUrl: string;
+                            };
+                            defaults: {
+                                cloneCap: number;
+                                deleteCap: number;
+                                suspendCap: number;
+                                maxQueue: number;
+                                maxHoldMs: number;
+                                taskPollMs: number;
+                                taskTimeoutMs: number;
+                                opsRingMax: number;
+                                sessionTtlHours: number;
+                                publicWsUrl: string;
+                            };
+                        };
+                    };
+                };
+            };
+        };
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        cloneCap?: number;
+                        deleteCap?: number;
+                        suspendCap?: number;
+                        maxQueue?: number;
+                        maxHoldMs?: number;
+                        taskPollMs?: number;
+                        taskTimeoutMs?: number;
+                        opsRingMax?: number;
+                        sessionTtlHours?: number;
+                        publicWsUrl?: string;
+                    };
+                };
+            };
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            settings: {
+                                cloneCap: number;
+                                deleteCap: number;
+                                suspendCap: number;
+                                maxQueue: number;
+                                maxHoldMs: number;
+                                taskPollMs: number;
+                                taskTimeoutMs: number;
+                                opsRingMax: number;
+                                sessionTtlHours: number;
+                                publicWsUrl: string;
+                            };
+                            defaults: {
+                                cloneCap: number;
+                                deleteCap: number;
+                                suspendCap: number;
+                                maxQueue: number;
+                                maxHoldMs: number;
+                                taskPollMs: number;
+                                taskTimeoutMs: number;
+                                opsRingMax: number;
+                                sessionTtlHours: number;
+                                publicWsUrl: string;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            message: string;
+                        };
+                    };
+                };
+            };
+        };
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/events": {
         parameters: {
             query?: never;
@@ -574,39 +704,6 @@ export interface paths {
         trace?: never;
     };
     "/api/openapi.json": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path?: never;
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Default Response */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content?: never;
-                };
-            };
-        };
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/": {
         parameters: {
             query?: never;
             header?: never;

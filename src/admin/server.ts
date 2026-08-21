@@ -12,6 +12,7 @@ import { log } from '../log.js'
 import type { OpsLog } from '../ops.js'
 import { verifyPassword } from '../password.js'
 import { signSession, verifySession } from '../session.js'
+import { SETTINGS_DEFAULTS, type Settings, type SettingsStore } from '../settings.js'
 import type { HealthMonitor } from '../upstream/health.js'
 import {
   CreateKeyBody,
@@ -24,6 +25,8 @@ import {
   OperationsReply,
   QueuesReply,
   RotateKeyBody,
+  SettingsPatch,
+  SettingsReply,
   StatusReply,
   TokenReply,
 } from './schemas.js'
@@ -31,6 +34,7 @@ import {
 export interface AdminDeps {
   config: Config
   keys: KeyStore
+  settings: SettingsStore
   admission: Admission
   health: HealthMonitor
   ops: OpsLog
@@ -57,7 +61,7 @@ interface LoginAttempts {
 }
 
 export async function buildAdminServer(deps: AdminDeps): Promise<FastifyInstance> {
-  const { config, keys, admission, health, ops } = deps
+  const { config, keys, settings, admission, health, ops } = deps
   const version = readVersion()
   const attempts = new Map<string, LoginAttempts>()
 
@@ -115,16 +119,14 @@ export async function buildAdminServer(deps: AdminDeps): Promise<FastifyInstance
         return reply.code(401).send({ message: 'invalid credentials' })
       }
       attempts.delete(ip)
-      const cookie = signSession(
-        { u: username, exp: now + config.sessionTtlMs },
-        config.sessionSecret,
-      )
+      const ttlMs = settings.all.sessionTtlHours * 3_600_000
+      const cookie = signSession({ u: username, exp: now + ttlMs }, config.sessionSecret)
       return reply
         .setCookie(SESSION_COOKIE, cookie, {
           httpOnly: true,
           sameSite: 'strict',
           path: '/',
-          maxAge: Math.floor(config.sessionTtlMs / 1000),
+          maxAge: Math.floor(ttlMs / 1000),
         })
         .send({ username })
     },
@@ -242,6 +244,24 @@ export async function buildAdminServer(deps: AdminDeps): Promise<FastifyInstance
     '/api/operations',
     { schema: { querystring: OperationsQuery, response: { 200: OperationsReply } } },
     async (req) => ({ rows: ops.list(req.query) }),
+  )
+
+  app.get('/api/settings', { schema: { response: { 200: SettingsReply } } }, async () => ({
+    settings: settings.all,
+    defaults: SETTINGS_DEFAULTS,
+  }))
+
+  app.put(
+    '/api/settings',
+    { schema: { body: SettingsPatch, response: { 200: SettingsReply, 400: ErrorReply } } },
+    async (req, reply) => {
+      try {
+        const updated = settings.update(req.body as Partial<Settings>)
+        return reply.send({ settings: updated, defaults: SETTINGS_DEFAULTS })
+      } catch (err) {
+        return reply.code(400).send({ message: String(err instanceof Error ? err.message : err) })
+      }
+    },
   )
 
   // Live queue/status stream for the panel.

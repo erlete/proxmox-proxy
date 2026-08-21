@@ -14,12 +14,14 @@ import { parseAuthorization } from '../keys/auth.js'
 import { vmidAllowed, type ApiKeyRecord, type KeyStore } from '../keys/store.js'
 import { log } from '../log.js'
 import type { OpsLog } from '../ops.js'
+import type { SettingsStore } from '../settings.js'
 import type { HealthMonitor } from '../upstream/health.js'
 import type { Upstream } from '../upstream/client.js'
 
 export interface DataPlaneDeps {
   config: Config
   keys: KeyStore
+  settings: SettingsStore
   upstream: Upstream
   admission: Admission
   health: HealthMonitor
@@ -110,7 +112,7 @@ function extractNewid(body: Buffer, contentType: string | undefined): number | n
 }
 
 export function createDataPlane(deps: DataPlaneDeps): Server {
-  const { config, keys, upstream, admission, health, ops } = deps
+  const { config, keys, settings, upstream, admission, health, ops } = deps
   const serviceAuth = `PVEAPIToken=${config.serviceToken}`
 
   const healthBody = (): Record<string, unknown> => ({
@@ -293,11 +295,16 @@ export function createDataPlane(deps: DataPlaneDeps): Server {
       }
 
       if (url.pathname === '/proxy/whoami') {
+        const current = settings.all
         sendJson(res, 200, {
           name: key.name,
           vmidRanges: key.vmidRanges,
-          websocketBase: config.publicWsUrl,
-          admission: config.admission.caps,
+          websocketBase: current.publicWsUrl || config.upstreamUrl.origin,
+          admission: {
+            clone: current.cloneCap,
+            delete: current.deleteCap,
+            suspend: current.suspendCap,
+          },
         })
         return
       }

@@ -389,6 +389,28 @@ select:focus {
   min-width: 220px;
 }
 
+/* ---- settings ---- */
+
+.settings-note {
+  margin-bottom: 14px;
+}
+
+.settings-group {
+  margin-bottom: 14px;
+  min-width: 0;
+}
+
+.settings-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 14px;
+}
+
+.hint {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
 /* ---- modal ---- */
 
 .modal-backdrop {

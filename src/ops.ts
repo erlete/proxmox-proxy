@@ -27,7 +27,7 @@ export class OpsLog {
 
   constructor(
     private db: Db,
-    private max: number,
+    private max: () => number,
   ) {}
 
   record(op: OpRecord): void {
@@ -96,6 +96,6 @@ export class OpsLog {
       .prepare(
         'DELETE FROM operations WHERE id <= (SELECT COALESCE(MAX(id), 0) FROM operations) - ?',
       )
-      .run(this.max)
+      .run(this.max())
   }
 }

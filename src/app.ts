@@ -10,6 +10,7 @@ import { KeyStore } from './keys/store.js'
 import { log } from './log.js'
 import { OpsLog } from './ops.js'
 import { hashPassword } from './password.js'
+import { SettingsStore, type Settings } from './settings.js'
 import { Upstream } from './upstream/client.js'
 import { HealthMonitor } from './upstream/health.js'
 import { SingletonLock } from './upstream/singleton.js'
@@ -18,6 +19,7 @@ export interface App {
   config: Config
   db: Db
   keys: KeyStore
+  settings: SettingsStore
   upstream: Upstream
   admission: Admission
   health: HealthMonitor
@@ -26,6 +28,22 @@ export interface App {
   dataServer: Server
   admin: FastifyInstance
   close(): Promise<void>
+}
+
+function admissionOptsFrom(s: Settings): {
+  caps: { clone: number; delete: number; suspend: number }
+  maxQueue: number
+  maxHoldMs: number
+  taskPollMs: number
+  taskTimeoutMs: number
+} {
+  return {
+    caps: { clone: s.cloneCap, delete: s.deleteCap, suspend: s.suspendCap },
+    maxQueue: s.maxQueue,
+    maxHoldMs: s.maxHoldMs,
+    taskPollMs: s.taskPollMs,
+    taskTimeoutMs: s.taskTimeoutMs,
+  }
 }
 
 /**
@@ -59,7 +77,8 @@ export async function createApp(config: Config, onFatal?: () => void): Promise<A
   }
 
   const keys = new KeyStore(db, config.keysTokenUser)
-  const ops = new OpsLog(db, config.opsRingMax)
+  const settings = new SettingsStore(db)
+  const ops = new OpsLog(db, () => settings.all.opsRingMax)
   const upstream = new Upstream({
     url: config.upstreamUrl,
     caPath: config.upstreamCaPath,
@@ -82,21 +101,31 @@ export async function createApp(config: Config, onFatal?: () => void): Promise<A
   const health = new HealthMonitor(upstream)
   health.start()
 
-  const admission = new Admission(upstream, config.admission)
+  const admission = new Admission(upstream, admissionOptsFrom(settings.all))
   admission.startTaskPoller()
   admission.on('task-finished', (event: TaskFinishedEvent) => {
     ops.finishTask(event.upid, event.exitstatus ?? event.note, event.taskMs)
   })
+  settings.on('change', (s: Settings) => admission.applyOpts(admissionOptsFrom(s)))
 
   const singletonHeld = (): boolean => (config.singleton.disabled ? true : (singleton?.held ?? false))
 
-  const dataServer = createDataPlane({ config, keys, upstream, admission, health, singletonHeld, ops })
+  const dataServer = createDataPlane({
+    config,
+    keys,
+    settings,
+    upstream,
+    admission,
+    health,
+    singletonHeld,
+    ops,
+  })
   await new Promise<void>((resolve, reject) => {
     dataServer.once('error', reject)
     dataServer.listen(config.dataPort, config.bindHost, resolve)
   })
 
-  const admin = await buildAdminServer({ config, keys, admission, health, ops, singletonHeld })
+  const admin = await buildAdminServer({ config, keys, settings, admission, health, ops, singletonHeld })
   await admin.listen({ port: config.adminPort, host: config.bindHost })
 
   const close = async (): Promise<void> => {
@@ -116,5 +145,5 @@ export async function createApp(config: Config, onFatal?: () => void): Promise<A
     singleton: config.singleton.disabled ? 'disabled' : 'held',
   })
 
-  return { config, db, keys, upstream, admission, health, ops, singleton, dataServer, admin, close }
+  return { config, db, keys, settings, upstream, admission, health, ops, singleton, dataServer, admin, close }
 }

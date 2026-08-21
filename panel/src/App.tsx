@@ -5,15 +5,17 @@ import { Login } from './views/Login'
 import { Operations } from './views/Operations'
 import { Overview } from './views/Overview'
 import { Queues } from './views/Queues'
+import { Settings } from './views/Settings'
 
 type Auth = 'loading' | 'login' | 'ready'
-type Page = 'overview' | 'queues' | 'operations' | 'keys'
+type Page = 'overview' | 'queues' | 'operations' | 'keys' | 'settings'
 
 const PAGES: { id: Page; label: string }[] = [
   { id: 'overview', label: 'Overview' },
   { id: 'queues', label: 'Queues' },
   { id: 'operations', label: 'Operations' },
   { id: 'keys', label: 'Keys' },
+  { id: 'settings', label: 'Settings' },
 ]
 
 export function App(): ReactElement {
@@ -64,6 +66,7 @@ export function App(): ReactElement {
         {page === 'queues' && <Queues />}
         {page === 'operations' && <Operations />}
         {page === 'keys' && <Keys />}
+        {page === 'settings' && <Settings />}
       </main>
     </div>
   )

@@ -24,9 +24,6 @@ const config = loadConfig({
   BIND_HOST: '127.0.0.1',
   DATA_PORT: '0',
   ADMIN_PORT: '0',
-  ADMISSION_CLONE_CAP: '1',
-  ADMISSION_DELETE_CAP: '1',
-  ADMISSION_TASK_POLL_MS: '1000',
 })
 
 const step = (msg: string): void => console.log(`\n== ${msg}`)
@@ -72,6 +69,15 @@ try {
   })
   assert.equal(login.status, 200)
   const cookie = (login.headers.get('set-cookie') ?? '').split(';')[0]
+
+  // Tighten runtime settings through the panel API (hot-applied).
+  const tuned = await fetch(`${adminUrl}/api/settings`, {
+    method: 'PUT',
+    headers: { 'content-type': 'application/json', cookie },
+    body: JSON.stringify({ cloneCap: 1, deleteCap: 1, taskPollMs: 1000 }),
+  })
+  assert.equal(tuned.status, 200)
+
   const created = await fetch(`${adminUrl}/api/keys`, {
     method: 'POST',
     headers: { 'content-type': 'application/json', cookie },

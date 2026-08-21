@@ -106,6 +106,21 @@ export class Admission extends EventEmitter {
     this.pollTimer.unref()
   }
 
+  /** Hot-apply new limits (panel settings). Raised caps pump waiting requests. */
+  applyOpts(opts: AdmissionOpts): void {
+    const pollChanged = opts.taskPollMs !== this.opts.taskPollMs
+    this.opts = opts
+    for (const cls of OP_CLASSES) {
+      this.classes[cls].cap = opts.caps[cls]
+      this.pump(cls)
+    }
+    if (pollChanged && this.pollTimer) {
+      clearInterval(this.pollTimer)
+      this.startTaskPoller()
+    }
+    this.changed()
+  }
+
   stop(): void {
     if (this.pollTimer) clearInterval(this.pollTimer)
     for (const cls of OP_CLASSES) {
