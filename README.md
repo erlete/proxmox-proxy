@@ -6,11 +6,11 @@ Es agnóstico de las aplicaciones que lo consumen: no conoce su dominio, solo su
 
 ## Arquitectura
 
-Dos planos en un solo proceso, con Caddy delante como único contenedor expuesto:
+Dos planos en un solo proceso, con Caddy delante como único contenedor expuesto en `DEPLOY_HOST:DEPLOY_PORT` (por defecto solo loopback, `127.0.0.1:8000`; el TLS y el dominio son cosa del perímetro):
 
 ```
-apps ──https──> Caddy :443  ──> proxy :8080  (plano de datos: API Proxmox verbatim)
-operador ──https──> Caddy :8443 ──> proxy :8081  (plano de gestión: panel + API admin)
+apps ──> Caddy :8000 ──(path /api2/*, /proxy/*)──> proxy :8080  (plano de datos: API Proxmox verbatim)
+operador ──> Caddy :8000 ──(resto de paths)──────> proxy :8081  (plano de gestión: panel + API admin)
 proxy ──https──> pveproxy :8006 (cuenta de servicio única)
 apps ──wss──> pveproxy :8006 (solo websockets VNC, directos por diseño)
 ```
@@ -19,7 +19,8 @@ apps ──wss──> pveproxy :8006 (solo websockets VNC, directos por diseño)
 - **Plano nativo** (`/proxy/whoami`, `/proxy/health`): descubrimiento e identidad. Una app solo necesita `PROXMOX_PROXY_ENDPOINT` y `PROXMOX_PROXY_KEY`; sus rangos y la URL de websockets se consultan en `whoami`.
 - **Plano de gestión** (`/api/...` + panel): claves, colas en vivo (SSE), historial de operaciones y estado. API tipada con OpenAPI en `/api/openapi.json`; el cliente del panel se genera de ese documento.
 - **Singleton por cluster**: solo puede existir un proxy por cluster. El lock es un marcador con heartbeat en el comentario de un pool reservado de Proxmox; una segunda instancia se niega a arrancar mientras el marcador esté fresco y toma el relevo si caduca.
-- **Estado mínimo**: SQLite (claves emitidas y un ring acotado de operaciones). Las colas viven en memoria; tras un reinicio el estado real se reconstruye del propio cluster.
+- **Configuración en dos niveles**: el `.env` solo lleva lo de arranque (upstream, credenciales, red, singleton). Todo lo operable en caliente (caps de admisión, colas, TTL de sesión, URL de websockets, tamaño del historial) se gestiona desde el panel (Settings), se persiste en SQLite y se aplica sin reiniciar.
+- **Estado mínimo**: SQLite (claves emitidas, settings y un ring acotado de operaciones). Las colas viven en memoria; tras un reinicio el estado real se reconstruye del propio cluster.
 
 ## Claves de API
 
@@ -49,9 +50,9 @@ docker compose up -d --build
 docker compose logs proxy # primera arrancada: imprime la password del panel UNA vez
 ```
 
-Todo lo demás se autogenera y persiste (password del panel, secreto de sesión) o tiene un default razonable; ver la seccion avanzada comentada de [.env.example](.env.example). La password del panel puede fijarse con `ADMIN_PASSWORD` o, mejor, `ADMIN_PASSWORD_HASH` (`npm run hash-password -- 'mi-password'`).
+Todo lo demás se autogenera y persiste (password del panel, secreto de sesión) o tiene un default razonable; ver la sección avanzada comentada de [.env.example](.env.example). La password del panel puede fijarse con `ADMIN_PASSWORD` o, mejor, `ADMIN_PASSWORD_HASH` (`npm run hash-password -- 'mi-password'`).
 
-Panel en `https://<host>:8443` (allowlist de IPs vía `PANEL_ALLOWLIST`). Las apps apuntan su cliente Proxmox a `https://<PROXY_DOMAIN>` con su clave.
+El despliegue escucha en `DEPLOY_HOST:DEPLOY_PORT` (por defecto `127.0.0.1:8000`, solo local). El panel vive en la raíz de ese mismo puerto; las apps apuntan su cliente Proxmox a él con su clave (los paths `/api2/*` y `/proxy/*` van al plano de datos, el resto al panel). Los ajustes de runtime se tocan desde el panel, no desde el `.env`.
 
 La cuenta de servicio del proxy en Proxmox necesita: `VM.*` sobre las VMs custodiadas, `Sys.Audit`, y `Pool.Allocate` sobre `/pool` (el lock singleton vive en un pool). Tras desplegar el proxy, cierra pveproxy:8006 por firewall a todo lo que no sea el host del proxy (y la red de administración): la disciplina deja de ser voluntaria.
 
@@ -77,5 +78,4 @@ npm run openapi                  # regenerar panel/openapi.json y los tipos del 
 - **console-session** (`POST /proxy/console-session`): acuñar la credencial del websocket VNC para que las apps no necesiten ninguna credencial de Proxmox.
 - **Botón rojo**: parar una tarea en curso desde el panel.
 - **Inventario por aplicación**: la vista del cluster por rangos que la UI de Proxmox no puede dar.
-- **Config en caliente** desde el panel (caps, colas) con auditoría.
 - `node:sqlite` es experimental en Node 24; el acceso está aislado en `src/db.ts` para poder migrar a `better-sqlite3` con un cambio local si hiciera falta.

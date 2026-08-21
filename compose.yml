@@ -2,13 +2,10 @@ services:
   caddy:
     image: caddy:2
     restart: unless-stopped
-    # Caddy is the only exposed container: data plane on 443, panel on 8443.
+    # Caddy is the only exposed container. DEPLOY_HOST/DEPLOY_PORT decide on
+    # which network the proxy is reachable (default: loopback only).
     ports:
-      - '${PROXY_HTTPS_PORT:-443}:443'
-      - '${PANEL_HTTPS_PORT:-8443}:8443'
-    environment:
-      PROXY_DOMAIN: '${PROXY_DOMAIN:-proxy.localhost}'
-      PANEL_ALLOWLIST: '${PANEL_ALLOWLIST:-private_ranges}'
+      - '${DEPLOY_HOST:-127.0.0.1}:${DEPLOY_PORT:-8000}:8000'
     volumes:
       - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data

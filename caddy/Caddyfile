@@ -1,24 +1,27 @@
-# Data plane: what the apps point their Proxmox client at.
-{$PROXY_DOMAIN}:443 {
-	# Internal CA by default. With a real public DNS name, remove this line
-	# and Caddy obtains an ACME certificate automatically.
-	tls internal
-	reverse_proxy proxy:8080 {
-		transport http {
-			# Held heavy operations can wait up to ADMISSION_MAX_HOLD_MS at
-			# the proxy: the edge must not cut them off first.
-			response_header_timeout 90s
-		}
-	}
+# Single entrypoint, routed by path. TLS/domains are the perimeter's job:
+# by default this listens plain HTTP on the network chosen via DEPLOY_HOST.
+{
+	auto_https off
 }
 
-# Management plane: panel + admin API, IP-allowlisted.
-:8443 {
-	tls internal
-	@blocked not remote_ip {$PANEL_ALLOWLIST}
-	respond @blocked "forbidden" 403
-	reverse_proxy proxy:8081 {
-		# SSE for the live queue view.
-		flush_interval -1
+:8000 {
+	# Data plane: what the apps point their Proxmox client at.
+	@data path /api2/* /proxy/*
+	handle @data {
+		reverse_proxy proxy:8080 {
+			transport http {
+				# Held heavy operations can wait for an admission slot:
+				# the edge must not cut them off first.
+				response_header_timeout 90s
+			}
+		}
+	}
+
+	# Management plane: panel + admin API (session-authenticated).
+	handle {
+		reverse_proxy proxy:8081 {
+			# SSE for the live queue view.
+			flush_interval -1
+		}
 	}
 }
