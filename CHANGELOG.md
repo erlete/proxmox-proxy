@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.1](https://github.com/DLT-Code/proxmox-proxy/compare/v0.5.0...v0.5.1) (2026-08-22)
+
+
+### Bug Fixes
+
+* **reserved:** close LXC-clone and disk-move bypasses of reserved VMIDs ([14e01c3](https://github.com/DLT-Code/proxmox-proxy/commit/14e01c37150dcadb50b3f1ddfd64bc93747fbc5e))
+
 ## [0.5.0](https://github.com/DLT-Code/proxmox-proxy/compare/v0.4.0...v0.5.0) (2026-08-22)
 
 
