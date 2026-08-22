@@ -44,10 +44,13 @@ PVEAPIToken=svc-proxy@pve!nombre-app=secreto
 
 ## Despliegue
 
-Se despliega desde una imagen publicada en `ghcr.io/dlt-code/proxmox-proxy`; no hace falta el código fuente en el host, solo `compose.yml` y un `.env`. Ambos plantilla vienen adjuntos a cada release:
+Se despliega desde una imagen publicada en `ghcr.io/dlt-code/proxmox-proxy`; no hace falta el código fuente en el host, solo `compose.yml` y un `.env`. Descarga esos dos ficheros del repo en el último tag publicado (con `gh`, que resuelve la autenticación del repo privado) y arranca:
 
 ```bash
-gh release download -R DLT-Code/proxmox-proxy -p compose.yml -p .env.example
+tag=$(gh release view -R DLT-Code/proxmox-proxy --json tagName -q .tagName)
+for f in compose.yml .env.example; do
+  gh api "repos/DLT-Code/proxmox-proxy/contents/$f?ref=$tag" -q .content | base64 -d > "$f"
+done
 cp .env.example .env        # 2 variables obligatorias: upstream y token de servicio
 docker login ghcr.io        # la imagen es privada (token con read:packages)
 docker compose up -d
