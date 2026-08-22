@@ -24,11 +24,18 @@ function VmTable({ vms }: { vms: Vm[] }): ReactElement {
       </thead>
       <tbody>
         {vms.map((vm) => (
-          <tr key={`${vm.node}-${vm.vmid}`}>
+          <tr key={`${vm.node}-${vm.vmid}`} className={vm.reserved ? 'dim' : undefined}>
             <td className="mono strong">{vm.vmid}</td>
             <td>{vm.name || <span className="muted">unnamed</span>}</td>
             <td>{vm.node}</td>
-            <td>{statusBadge(vm.status)}</td>
+            <td className="inv-status">
+              {statusBadge(vm.status)}
+              {vm.reserved && (
+                <span className="badge err" title="reserved: the proxy will not touch this VM">
+                  reserved
+                </span>
+              )}
+            </td>
           </tr>
         ))}
       </tbody>

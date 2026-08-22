@@ -145,7 +145,10 @@ export const SettingsSchema = Type.Object({
   opsRingMax: Type.Integer({ minimum: 100, maximum: 1000000 }),
   sessionTtlHours: Type.Integer({ minimum: 1, maximum: 168 }),
   publicWsUrl: Type.String({ maxLength: 200 }),
-  priorityApps: Type.Array(Type.String(), { maxItems: 64 }),
+  /** App name -> admission priority value (higher wins); 0 omitted. */
+  appPriority: Type.Record(Type.String(), Type.Integer()),
+  /** VMID ranges the proxy must never touch, for any app. */
+  reserved: Type.Array(VmidRangeSchema, { maxItems: 128 }),
 })
 
 export const SettingsPatch = Type.Partial(SettingsSchema)
@@ -172,6 +175,8 @@ export const InventoryVmSchema = Type.Object({
   name: Type.String(),
   status: Type.String(),
   type: Type.String(),
+  /** True when the VMID falls in a reserved range: off-limits to every app. */
+  reserved: Type.Boolean(),
 })
 
 export const InventoryAppSchema = Type.Object({

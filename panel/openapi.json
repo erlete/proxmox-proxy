@@ -3,7 +3,7 @@
   "info": {
     "title": "proxmox-proxy admin API",
     "description": "Management plane: keys, queues, operations, status.",
-    "version": "0.3.0"
+    "version": "0.4.0"
   },
   "components": {
     "schemas": {}
@@ -1018,7 +1018,8 @@
                         "opsRingMax",
                         "sessionTtlHours",
                         "publicWsUrl",
-                        "priorityApps"
+                        "appPriority",
+                        "reserved"
                       ],
                       "properties": {
                         "cloneCap": {
@@ -1070,11 +1071,30 @@
                           "maxLength": 200,
                           "type": "string"
                         },
-                        "priorityApps": {
-                          "maxItems": 64,
+                        "appPriority": {
+                          "type": "object",
+                          "additionalProperties": {
+                            "type": "integer"
+                          }
+                        },
+                        "reserved": {
+                          "maxItems": 128,
                           "type": "array",
                           "items": {
-                            "type": "string"
+                            "type": "array",
+                            "items": [
+                              {
+                                "minimum": 100,
+                                "type": "integer"
+                              },
+                              {
+                                "minimum": 100,
+                                "type": "integer"
+                              }
+                            ],
+                            "additionalItems": false,
+                            "minItems": 2,
+                            "maxItems": 2
                           }
                         }
                       }
@@ -1092,7 +1112,8 @@
                         "opsRingMax",
                         "sessionTtlHours",
                         "publicWsUrl",
-                        "priorityApps"
+                        "appPriority",
+                        "reserved"
                       ],
                       "properties": {
                         "cloneCap": {
@@ -1144,11 +1165,30 @@
                           "maxLength": 200,
                           "type": "string"
                         },
-                        "priorityApps": {
-                          "maxItems": 64,
+                        "appPriority": {
+                          "type": "object",
+                          "additionalProperties": {
+                            "type": "integer"
+                          }
+                        },
+                        "reserved": {
+                          "maxItems": 128,
                           "type": "array",
                           "items": {
-                            "type": "string"
+                            "type": "array",
+                            "items": [
+                              {
+                                "minimum": 100,
+                                "type": "integer"
+                              },
+                              {
+                                "minimum": 100,
+                                "type": "integer"
+                              }
+                            ],
+                            "additionalItems": false,
+                            "minItems": 2,
+                            "maxItems": 2
                           }
                         }
                       }
@@ -1217,11 +1257,30 @@
                     "maxLength": 200,
                     "type": "string"
                   },
-                  "priorityApps": {
-                    "maxItems": 64,
+                  "appPriority": {
+                    "type": "object",
+                    "additionalProperties": {
+                      "type": "integer"
+                    }
+                  },
+                  "reserved": {
+                    "maxItems": 128,
                     "type": "array",
                     "items": {
-                      "type": "string"
+                      "type": "array",
+                      "items": [
+                        {
+                          "minimum": 100,
+                          "type": "integer"
+                        },
+                        {
+                          "minimum": 100,
+                          "type": "integer"
+                        }
+                      ],
+                      "additionalItems": false,
+                      "minItems": 2,
+                      "maxItems": 2
                     }
                   }
                 }
@@ -1254,7 +1313,8 @@
                         "opsRingMax",
                         "sessionTtlHours",
                         "publicWsUrl",
-                        "priorityApps"
+                        "appPriority",
+                        "reserved"
                       ],
                       "properties": {
                         "cloneCap": {
@@ -1306,11 +1366,30 @@
                           "maxLength": 200,
                           "type": "string"
                         },
-                        "priorityApps": {
-                          "maxItems": 64,
+                        "appPriority": {
+                          "type": "object",
+                          "additionalProperties": {
+                            "type": "integer"
+                          }
+                        },
+                        "reserved": {
+                          "maxItems": 128,
                           "type": "array",
                           "items": {
-                            "type": "string"
+                            "type": "array",
+                            "items": [
+                              {
+                                "minimum": 100,
+                                "type": "integer"
+                              },
+                              {
+                                "minimum": 100,
+                                "type": "integer"
+                              }
+                            ],
+                            "additionalItems": false,
+                            "minItems": 2,
+                            "maxItems": 2
                           }
                         }
                       }
@@ -1328,7 +1407,8 @@
                         "opsRingMax",
                         "sessionTtlHours",
                         "publicWsUrl",
-                        "priorityApps"
+                        "appPriority",
+                        "reserved"
                       ],
                       "properties": {
                         "cloneCap": {
@@ -1380,11 +1460,30 @@
                           "maxLength": 200,
                           "type": "string"
                         },
-                        "priorityApps": {
-                          "maxItems": 64,
+                        "appPriority": {
+                          "type": "object",
+                          "additionalProperties": {
+                            "type": "integer"
+                          }
+                        },
+                        "reserved": {
+                          "maxItems": 128,
                           "type": "array",
                           "items": {
-                            "type": "string"
+                            "type": "array",
+                            "items": [
+                              {
+                                "minimum": 100,
+                                "type": "integer"
+                              },
+                              {
+                                "minimum": 100,
+                                "type": "integer"
+                              }
+                            ],
+                            "additionalItems": false,
+                            "minItems": 2,
+                            "maxItems": 2
                           }
                         }
                       }
@@ -1442,7 +1541,8 @@
                         "opsRingMax",
                         "sessionTtlHours",
                         "publicWsUrl",
-                        "priorityApps"
+                        "appPriority",
+                        "reserved"
                       ],
                       "properties": {
                         "cloneCap": {
@@ -1494,11 +1594,30 @@
                           "maxLength": 200,
                           "type": "string"
                         },
-                        "priorityApps": {
-                          "maxItems": 64,
+                        "appPriority": {
+                          "type": "object",
+                          "additionalProperties": {
+                            "type": "integer"
+                          }
+                        },
+                        "reserved": {
+                          "maxItems": 128,
                           "type": "array",
                           "items": {
-                            "type": "string"
+                            "type": "array",
+                            "items": [
+                              {
+                                "minimum": 100,
+                                "type": "integer"
+                              },
+                              {
+                                "minimum": 100,
+                                "type": "integer"
+                              }
+                            ],
+                            "additionalItems": false,
+                            "minItems": 2,
+                            "maxItems": 2
                           }
                         }
                       }
@@ -1516,7 +1635,8 @@
                         "opsRingMax",
                         "sessionTtlHours",
                         "publicWsUrl",
-                        "priorityApps"
+                        "appPriority",
+                        "reserved"
                       ],
                       "properties": {
                         "cloneCap": {
@@ -1568,11 +1688,30 @@
                           "maxLength": 200,
                           "type": "string"
                         },
-                        "priorityApps": {
-                          "maxItems": 64,
+                        "appPriority": {
+                          "type": "object",
+                          "additionalProperties": {
+                            "type": "integer"
+                          }
+                        },
+                        "reserved": {
+                          "maxItems": 128,
                           "type": "array",
                           "items": {
-                            "type": "string"
+                            "type": "array",
+                            "items": [
+                              {
+                                "minimum": 100,
+                                "type": "integer"
+                              },
+                              {
+                                "minimum": 100,
+                                "type": "integer"
+                              }
+                            ],
+                            "additionalItems": false,
+                            "minItems": 2,
+                            "maxItems": 2
                           }
                         }
                       }
@@ -1728,7 +1867,8 @@
                                 "node",
                                 "name",
                                 "status",
-                                "type"
+                                "type",
+                                "reserved"
                               ],
                               "properties": {
                                 "vmid": {
@@ -1745,6 +1885,9 @@
                                 },
                                 "type": {
                                   "type": "string"
+                                },
+                                "reserved": {
+                                  "type": "boolean"
                                 }
                               }
                             }
@@ -1761,7 +1904,8 @@
                           "node",
                           "name",
                           "status",
-                          "type"
+                          "type",
+                          "reserved"
                         ],
                         "properties": {
                           "vmid": {
@@ -1778,6 +1922,9 @@
                           },
                           "type": {
                             "type": "string"
+                          },
+                          "reserved": {
+                            "type": "boolean"
                           }
                         }
                       }

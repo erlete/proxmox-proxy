@@ -638,7 +638,13 @@ export interface paths {
                                 opsRingMax: number;
                                 sessionTtlHours: number;
                                 publicWsUrl: string;
-                                priorityApps: string[];
+                                appPriority: {
+                                    [key: string]: number;
+                                };
+                                reserved: [
+                                    number,
+                                    number
+                                ][];
                             };
                             defaults: {
                                 cloneCap: number;
@@ -651,7 +657,13 @@ export interface paths {
                                 opsRingMax: number;
                                 sessionTtlHours: number;
                                 publicWsUrl: string;
-                                priorityApps: string[];
+                                appPriority: {
+                                    [key: string]: number;
+                                };
+                                reserved: [
+                                    number,
+                                    number
+                                ][];
                             };
                         };
                     };
@@ -678,7 +690,13 @@ export interface paths {
                         opsRingMax?: number;
                         sessionTtlHours?: number;
                         publicWsUrl?: string;
-                        priorityApps?: string[];
+                        appPriority?: {
+                            [key: string]: number;
+                        };
+                        reserved?: [
+                            number,
+                            number
+                        ][];
                     };
                 };
             };
@@ -701,7 +719,13 @@ export interface paths {
                                 opsRingMax: number;
                                 sessionTtlHours: number;
                                 publicWsUrl: string;
-                                priorityApps: string[];
+                                appPriority: {
+                                    [key: string]: number;
+                                };
+                                reserved: [
+                                    number,
+                                    number
+                                ][];
                             };
                             defaults: {
                                 cloneCap: number;
@@ -714,7 +738,13 @@ export interface paths {
                                 opsRingMax: number;
                                 sessionTtlHours: number;
                                 publicWsUrl: string;
-                                priorityApps: string[];
+                                appPriority: {
+                                    [key: string]: number;
+                                };
+                                reserved: [
+                                    number,
+                                    number
+                                ][];
                             };
                         };
                     };
@@ -775,7 +805,13 @@ export interface paths {
                                 opsRingMax: number;
                                 sessionTtlHours: number;
                                 publicWsUrl: string;
-                                priorityApps: string[];
+                                appPriority: {
+                                    [key: string]: number;
+                                };
+                                reserved: [
+                                    number,
+                                    number
+                                ][];
                             };
                             defaults: {
                                 cloneCap: number;
@@ -788,7 +824,13 @@ export interface paths {
                                 opsRingMax: number;
                                 sessionTtlHours: number;
                                 publicWsUrl: string;
-                                priorityApps: string[];
+                                appPriority: {
+                                    [key: string]: number;
+                                };
+                                reserved: [
+                                    number,
+                                    number
+                                ][];
                             };
                         };
                     };
@@ -903,6 +945,7 @@ export interface paths {
                                     name: string;
                                     status: string;
                                     type: string;
+                                    reserved: boolean;
                                 }[];
                             }[];
                             unassigned: {
@@ -911,6 +954,7 @@ export interface paths {
                                 name: string;
                                 status: string;
                                 type: string;
+                                reserved: boolean;
                             }[];
                             upstreamOk: boolean;
                         };

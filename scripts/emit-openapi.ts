@@ -34,7 +34,7 @@ const admission = new Admission(null, {
   maxHoldMs: SETTINGS_DEFAULTS.maxHoldMs,
   taskPollMs: SETTINGS_DEFAULTS.taskPollMs,
   taskTimeoutMs: SETTINGS_DEFAULTS.taskTimeoutMs,
-  priorityApps: SETTINGS_DEFAULTS.priorityApps,
+  priorityApps: [],
 })
 const health = { state: { ok: false, version: null, checkedAt: 0, error: null } } as HealthMonitor
 const upstream = { api: () => Promise.resolve([]) } as unknown as Upstream

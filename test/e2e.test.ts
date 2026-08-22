@@ -435,6 +435,44 @@ test('red button stops a running task through the proxy', async () => {
   assert.equal(bad.status, 400)
 })
 
+test('reserved VMIDs are denied for every app, beating key scope', async () => {
+  // Reserve a VMID that is INSIDE app-a's own range.
+  const set = await fetch(`${adminUrl}/api/settings`, {
+    method: 'PUT',
+    headers: { 'content-type': 'application/json', cookie },
+    body: JSON.stringify({ reserved: [[1100200, 1100200]] }),
+  })
+  assert.equal(set.status, 200)
+
+  // A read the key would otherwise be allowed is now 403 (reserved wins).
+  const read = await fetch(`${dataUrl}/api2/json/nodes/n1/qemu/1100200/status/current`, {
+    headers: { authorization: appToken },
+  })
+  assert.equal(read.status, 403)
+
+  // A clone whose newid is reserved is denied before admission.
+  const clone = await fetch(`${dataUrl}/api2/json/nodes/n1/qemu/1100050/clone`, {
+    method: 'POST',
+    headers: { authorization: appToken, 'content-type': 'application/x-www-form-urlencoded' },
+    body: 'newid=1100200',
+  })
+  assert.equal(clone.status, 403)
+
+  // A non-reserved VMID in range still works.
+  const ok = await fetch(`${dataUrl}/api2/json/nodes/n1/qemu/1100100/status/current`, {
+    headers: { authorization: appToken },
+  })
+  assert.equal(ok.status, 200)
+
+  // Clear so later tests are unaffected.
+  const clear = await fetch(`${adminUrl}/api/settings`, {
+    method: 'PUT',
+    headers: { 'content-type': 'application/json', cookie },
+    body: JSON.stringify({ reserved: [] }),
+  })
+  assert.equal(clear.status, 200)
+})
+
 test('purge removes a revoked key record; active keys are protected', async () => {
   const mk = await fetch(`${adminUrl}/api/keys`, {
     method: 'POST',

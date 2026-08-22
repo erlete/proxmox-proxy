@@ -1,13 +1,14 @@
 import { useEffect, useState, type ReactElement } from 'react'
-import { ArrowDown, ArrowUp, Plus, X } from 'lucide-react'
+import { Plus, ShieldBan, X } from 'lucide-react'
 import { api } from '../api'
 import type { paths } from '../api/schema'
 
 type SettingsBody = paths['/api/settings']['get']['responses'][200]['content']['application/json']
 type Values = SettingsBody['settings']
+type Range = [number, number]
 
 interface FieldDef {
-  key: Exclude<keyof Values, 'priorityApps'>
+  key: Exclude<keyof Values, 'appPriority' | 'reserved'>
   label: string
   hint: string
 }
@@ -40,101 +41,85 @@ const GROUPS: { title: string; fields: FieldDef[] }[] = [
   },
 ]
 
+/** Accepts "100" (a single VMID) or "1100000-1100999" (a range). */
+function parseRange(text: string): Range | null {
+  const t = text.trim()
+  const single = /^(\d+)$/.exec(t)
+  if (single) {
+    const n = Number.parseInt(single[1], 10)
+    return n >= 100 ? [n, n] : null
+  }
+  const m = /^(\d+)\s*-\s*(\d+)$/.exec(t)
+  if (!m) return null
+  const min = Number.parseInt(m[1], 10)
+  const max = Number.parseInt(m[2], 10)
+  return min >= 100 && max >= min ? [min, max] : null
+}
+
 /**
- * Ordered admission priority. Listed apps are strict tiers in this order; every
- * other app shares the bottom tier round-robin. Empty list = round-robin for
- * all. Edits feed the shared dirty/save flow like any other setting.
+ * Reserved VMIDs: ranges the proxy must never touch, for any app. Every op that
+ * targets a VMID in these ranges is denied regardless of key scope.
  */
-function PriorityEditor({
-  order,
-  knownApps,
+function ReservedEditor({
+  ranges,
   onChange,
 }: {
-  order: string[]
-  knownApps: string[]
-  onChange: (next: string[]) => void
+  ranges: Range[]
+  onChange: (next: Range[]) => void
 }): ReactElement {
-  const [pick, setPick] = useState('')
-  const move = (i: number, delta: number): void => {
-    const j = i + delta
-    if (j < 0 || j >= order.length) return
-    const next = [...order]
-    ;[next[i], next[j]] = [next[j], next[i]]
-    onChange(next)
-  }
+  const [text, setText] = useState('')
+  const [err, setErr] = useState<string | null>(null)
   const add = (): void => {
-    const name = pick.trim()
-    if (!name || order.includes(name)) return
-    onChange([...order, name])
-    setPick('')
+    const r = parseRange(text)
+    if (!r) {
+      setErr('Enter a VMID (100) or a range (1100000-1100999); min 100')
+      return
+    }
+    setErr(null)
+    if (!ranges.some(([a, b]) => a === r[0] && b === r[1])) onChange([...ranges, r])
+    setText('')
   }
-  const suggestions = knownApps.filter((a) => !order.includes(a))
   return (
     <section className="card settings-group">
-      <div className="card-title">Admission priority (manual)</div>
+      <div className="card-title">
+        <ShieldBan size={13} className="muted" /> Reserved VMIDs
+      </div>
       <p className="hint settings-note">
-        Strict tiers in this order; everyone else shares the bottom tier round-robin. Empty = pure
-        round-robin fairness. Applied hot on save.
+        Off-limits to every app: any operation targeting a VMID in these ranges is denied, whatever
+        the key scope. Shown in the inventory. Applied hot on save.
       </p>
-      {order.length === 0 ? (
-        <div className="empty small">no priority set, all apps share fairly</div>
+      {ranges.length === 0 ? (
+        <div className="empty small">nothing reserved</div>
       ) : (
-        <ol className="priority-list">
-          {order.map((name, i) => (
-            <li key={name} className="priority-item">
-              <span className="badge">{i + 1}</span>
-              <span className="strong mono">{name}</span>
-              <div className="priority-actions">
-                <button
-                  className="btn small icon-btn"
-                  disabled={i === 0}
-                  onClick={() => move(i, -1)}
-                  title="move up"
-                >
-                  <ArrowUp size={12} />
-                </button>
-                <button
-                  className="btn small icon-btn"
-                  disabled={i === order.length - 1}
-                  onClick={() => move(i, 1)}
-                  title="move down"
-                >
-                  <ArrowDown size={12} />
-                </button>
-                <button
-                  className="btn small danger icon-btn"
-                  onClick={() => onChange(order.filter((n) => n !== name))}
-                  title="remove"
-                >
-                  <X size={12} />
-                </button>
-              </div>
-            </li>
+        <div className="chip-row">
+          {ranges.map(([a, b]) => (
+            <span className="chip mono reserved-chip" key={`${a}-${b}`}>
+              {a === b ? a : `${a} - ${b}`}
+              <button
+                className="chip-x"
+                title="remove"
+                onClick={() => onChange(ranges.filter(([x, y]) => !(x === a && y === b)))}
+              >
+                <X size={11} />
+              </button>
+            </span>
           ))}
-        </ol>
+        </div>
       )}
       <div className="priority-add">
         <input
-          value={pick}
-          onChange={(e) => setPick(e.target.value.toLowerCase())}
-          placeholder="app name"
-          list="known-apps"
-          pattern="[a-z0-9][a-z0-9-]+"
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          placeholder="100 or 1100000-1100999"
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') add()
+          }}
         />
-        <datalist id="known-apps">
-          {suggestions.map((a) => (
-            <option value={a} key={a} />
-          ))}
-        </datalist>
-        <button className="btn small icon-btn" onClick={add} disabled={!pick.trim()}>
-          <Plus size={13} /> Add
+        <button className="btn small icon-btn" onClick={add} disabled={!text.trim()}>
+          <Plus size={13} /> Reserve
         </button>
-        {order.length > 0 && (
-          <button className="btn small" onClick={() => onChange([])}>
-            Clear
-          </button>
-        )}
       </div>
+      {err && <div className="error">{err}</div>}
     </section>
   )
 }
@@ -143,21 +128,16 @@ export function Settings(): ReactElement {
   const [values, setValues] = useState<Values | null>(null)
   const [defaults, setDefaults] = useState<Values | null>(null)
   const [dirty, setDirty] = useState<Partial<Values>>({})
-  const [knownApps, setKnownApps] = useState<string[]>([])
   const [error, setError] = useState<string | null>(null)
   const [saved, setSaved] = useState(false)
 
   const load = async (): Promise<void> => {
-    const [settingsRes, keysRes] = await Promise.all([
-      api.GET('/api/settings'),
-      api.GET('/api/keys'),
-    ])
-    if (settingsRes.data) {
-      setValues(settingsRes.data.settings)
-      setDefaults(settingsRes.data.defaults)
+    const { data } = await api.GET('/api/settings')
+    if (data) {
+      setValues(data.settings)
+      setDefaults(data.defaults)
       setDirty({})
     }
-    if (keysRes.data) setKnownApps(keysRes.data.keys.map((k) => k.name))
   }
 
   useEffect(() => {
@@ -178,9 +158,9 @@ export function Settings(): ReactElement {
     }
   }
 
-  const setPriority = (next: string[]): void => {
+  const setReserved = (next: Range[]): void => {
     setSaved(false)
-    setDirty((d) => ({ ...d, priorityApps: next }))
+    setDirty((d) => ({ ...d, reserved: next }))
   }
 
   const save = async (): Promise<void> => {
@@ -241,7 +221,7 @@ export function Settings(): ReactElement {
           </div>
         </section>
       ))}
-      <PriorityEditor order={current.priorityApps} knownApps={knownApps} onChange={setPriority} />
+      <ReservedEditor ranges={current.reserved as Range[]} onChange={setReserved} />
       {error && <div className="error">{error}</div>}
       <div className="toolbar">
         <button

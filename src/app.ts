@@ -32,6 +32,16 @@ export interface App {
   close(): Promise<void>
 }
 
+/** Ordered strict-tier list the admission engine consumes, derived from the
+ * per-app priority values: value desc, then name asc. Value-0 apps are absent
+ * (they share the round-robin bottom tier). */
+function priorityOrder(appPriority: Record<string, number>): string[] {
+  return Object.entries(appPriority)
+    .filter(([, v]) => v > 0)
+    .sort(([an, av], [bn, bv]) => bv - av || an.localeCompare(bn))
+    .map(([name]) => name)
+}
+
 function admissionOptsFrom(s: Settings): AdmissionOpts {
   return {
     caps: { clone: s.cloneCap, delete: s.deleteCap, suspend: s.suspendCap },
@@ -39,7 +49,7 @@ function admissionOptsFrom(s: Settings): AdmissionOpts {
     maxHoldMs: s.maxHoldMs,
     taskPollMs: s.taskPollMs,
     taskTimeoutMs: s.taskTimeoutMs,
-    priorityApps: s.priorityApps,
+    priorityApps: priorityOrder(s.appPriority),
   }
 }
 

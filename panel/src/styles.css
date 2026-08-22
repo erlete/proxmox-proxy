@@ -756,6 +756,38 @@ select:focus {
   max-width: 220px;
 }
 
+.priority-value {
+  width: 90px;
+  text-align: center;
+  font-family: var(--mono);
+}
+
+.reserved-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.chip-x {
+  display: inline-flex;
+  align-items: center;
+  border: 0;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 0;
+}
+
+.chip-x:hover {
+  color: var(--err);
+}
+
+.inv-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 /* ---- modal ---- */
 
 .modal-backdrop {

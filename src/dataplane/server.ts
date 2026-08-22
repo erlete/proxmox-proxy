@@ -165,6 +165,18 @@ export function createDataPlaneHandler(deps: DataPlaneDeps): RequestListener {
         sendJson(res, 400, { message: 'clone through the proxy requires an explicit newid' })
         return
       }
+      if (vmidAllowed(settings.reservedRanges, newid)) {
+        sendJson(res, 403, { message: `newid ${newid} is reserved` })
+        ops.record({
+          ...base,
+          status: 403,
+          queueMs: null,
+          durationMs: null,
+          upid: null,
+          note: 'reserved-newid',
+        })
+        return
+      }
       if (!vmidAllowed(key.vmidRanges, newid)) {
         sendJson(res, 403, { message: `newid ${newid} is outside the ranges of this key` })
         ops.record({
@@ -314,6 +326,10 @@ export function createDataPlaneHandler(deps: DataPlaneDeps): RequestListener {
       sendJson(res, 400, { message: 'expected a JSON body: {node, vmid}' })
       return
     }
+    if (vmidAllowed(settings.reservedRanges, vmid)) {
+      sendJson(res, 403, { message: `vmid ${vmid} is reserved` })
+      return
+    }
     if (!vmidAllowed(key.vmidRanges, vmid)) {
       sendJson(res, 403, { message: `vmid ${vmid} is outside the ranges of this key` })
       return
@@ -455,6 +471,27 @@ export function createDataPlaneHandler(deps: DataPlaneDeps): RequestListener {
       }
 
       const cls = classify(req.method ?? 'GET', url.pathname)
+
+      // Reserved VMIDs are off-limits to EVERY app: deny any op targeting one
+      // (path VMID or task UPID), regardless of the key's own ranges.
+      const targetVmid = cls.pathVmid ?? cls.upidVmid
+      if (targetVmid != null && vmidAllowed(settings.reservedRanges, targetVmid)) {
+        sendJson(res, 403, { message: `vmid ${targetVmid} is reserved` })
+        ops.record({
+          keyName: key.name,
+          method: req.method ?? '',
+          path: url.pathname,
+          opClass: cls.opClass,
+          vmid: targetVmid,
+          status: 403,
+          queueMs: null,
+          durationMs: null,
+          upid: null,
+          note: 'reserved',
+        })
+        return
+      }
+
       const denied = authorize(req.method ?? 'GET', cls, (vmid) =>
         vmidAllowed(key.vmidRanges, vmid),
       )

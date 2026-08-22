@@ -388,13 +388,17 @@ export async function buildAdminServer(deps: AdminDeps): Promise<FastifyInstance
   // the VMs that belong to no range (manual or orphaned). Sourced from the
   // cluster itself, so it surfaces residue an app may have lost track of.
   app.get('/api/inventory', { schema: { response: { 200: InventoryReply } } }, async () => {
-    let vms: InventoryVm[]
+    let raw: InventoryVm[]
     try {
-      vms = await loadClusterVms()
+      raw = await loadClusterVms()
     } catch (err) {
       log.warn('inventory read failed', { error: String(err) })
       return { apps: [], unassigned: [], upstreamOk: false }
     }
+    // Decorate with the reserved flag at response time (not cached) so a change
+    // to the reserved ranges shows up immediately.
+    const reserved = settings.reservedRanges
+    const vms = raw.map((vm) => ({ ...vm, reserved: vmidAllowed(reserved, vm.vmid) }))
     const apps = keys.list().map((k) => ({
       name: k.name,
       vmidRanges: k.vmidRanges,

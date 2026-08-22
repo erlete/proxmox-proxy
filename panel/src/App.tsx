@@ -1,5 +1,6 @@
 import { useEffect, useState, type ReactElement } from 'react'
 import {
+  ArrowUpNarrowWide,
   Boxes,
   Gauge,
   HardDrive,
@@ -16,6 +17,7 @@ import { Inventory } from './views/Inventory'
 import { Login } from './views/Login'
 import { Operations } from './views/Operations'
 import { Overview } from './views/Overview'
+import { Priorities } from './views/Priorities'
 import { Queues } from './views/Queues'
 import { Settings } from './views/Settings'
 
@@ -24,6 +26,7 @@ type Auth = 'loading' | 'login' | 'ready'
 const PAGES = [
   { id: 'overview', label: 'Overview', icon: Gauge },
   { id: 'queues', label: 'Queues', icon: Layers },
+  { id: 'priorities', label: 'Priorities', icon: ArrowUpNarrowWide },
   { id: 'operations', label: 'Operations', icon: History },
   { id: 'apps', label: 'Apps', icon: Boxes },
   { id: 'inventory', label: 'Inventory', icon: HardDrive },
@@ -85,6 +88,7 @@ export function App(): ReactElement {
       <main className="content">
         {page === 'overview' && <Overview />}
         {page === 'queues' && <Queues />}
+        {page === 'priorities' && <Priorities />}
         {page === 'operations' && <Operations />}
         {page === 'apps' && <Apps />}
         {page === 'inventory' && <Inventory />}

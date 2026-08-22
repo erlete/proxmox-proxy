@@ -1,5 +1,6 @@
 import { EventEmitter } from 'node:events'
 import { getMeta, setMeta, type Db } from './db.js'
+import { validRanges, type VmidRange } from './keys/store.js'
 import { log } from './log.js'
 
 /**
@@ -20,11 +21,17 @@ export interface Settings {
   /** Base URL apps use for direct VNC websockets. Empty = the upstream origin. */
   publicWsUrl: string
   /**
-   * Ordered app (key) names that get admission preference. Each listed app is a
-   * strict tier in list order; everyone else shares the bottom tier round-robin.
-   * Empty = pure round-robin fairness across all apps.
+   * Admission priority per app (key name -> value, default 0). Higher value =
+   * more preference; apps sort by value desc then name. Value 0 apps share the
+   * bottom round-robin tier. Only non-zero values are stored.
    */
-  priorityApps: string[]
+  appPriority: Record<string, number>
+  /**
+   * VMID ranges the proxy must NEVER touch, for ANY app: every operation that
+   * targets a VMID inside these ranges is denied regardless of key scope. A
+   * single VMID is a [n, n] range. Surfaced in the inventory.
+   */
+  reserved: VmidRange[]
 }
 
 export const SETTINGS_DEFAULTS: Settings = {
@@ -38,12 +45,17 @@ export const SETTINGS_DEFAULTS: Settings = {
   opsRingMax: 20_000,
   sessionTtlHours: 12,
   publicWsUrl: '',
-  priorityApps: [],
+  appPriority: {},
+  reserved: [],
 }
 
 const APP_NAME_RE = /^[a-z0-9][a-z0-9-]{1,62}$/
+const PRIORITY_MAX = 1000
 
-const BOUNDS: Record<keyof Omit<Settings, 'publicWsUrl' | 'priorityApps'>, [number, number]> = {
+const BOUNDS: Record<
+  keyof Omit<Settings, 'publicWsUrl' | 'appPriority' | 'reserved'>,
+  [number, number]
+> = {
   cloneCap: [0, 64],
   deleteCap: [0, 64],
   suspendCap: [0, 64],
@@ -71,9 +83,21 @@ export class SettingsStore extends EventEmitter {
     this.values = { ...SETTINGS_DEFAULTS, ...stored }
   }
 
+  /**
+   * Reserved ranges for the data-plane hot path. Returns the live array (read
+   * only): update() always replaces it wholesale, so it is a stable snapshot.
+   */
+  get reservedRanges(): VmidRange[] {
+    return this.values.reserved
+  }
+
   get all(): Settings {
-    // Copy the array so callers can never mutate the stored priority order.
-    return { ...this.values, priorityApps: [...this.values.priorityApps] }
+    // Deep-copy the mutable structures so callers can never alter stored state.
+    return {
+      ...this.values,
+      appPriority: { ...this.values.appPriority },
+      reserved: this.values.reserved.map((r) => [...r] as VmidRange),
+    }
   }
 
   /** Validates, persists and applies a partial update. Throws on bad values. */
@@ -85,14 +109,17 @@ export class SettingsStore extends EventEmitter {
         if (typeof value !== 'string' || value.length > 200) throw new Error('invalid publicWsUrl')
         if (value !== '') new URL(value) // throws when not a URL
         next.publicWsUrl = value
-      } else if (key === 'priorityApps') {
-        if (!Array.isArray(value) || value.length > 64) throw new Error('invalid priorityApps')
-        for (const v of value) {
-          if (typeof v !== 'string' || !APP_NAME_RE.test(v)) {
-            throw new Error(`invalid app name in priorityApps: ${String(v)}`)
-          }
+      } else if (key === 'appPriority') {
+        next.appPriority = validatePriority(value)
+      } else if (key === 'reserved') {
+        if (
+          !Array.isArray(value) ||
+          value.length > 128 ||
+          (value.length > 0 && !validRanges(value))
+        ) {
+          throw new Error('invalid reserved ranges')
         }
-        next.priorityApps = [...new Set(value as string[])] // dedupe, keep order
+        next.reserved = (value as VmidRange[]).map((r) => [...r] as VmidRange)
       } else {
         const [min, max] = BOUNDS[key]
         if (typeof value !== 'number' || !Number.isFinite(value) || value < min || value > max) {
@@ -101,26 +128,36 @@ export class SettingsStore extends EventEmitter {
         next[key] = Math.round(value)
       }
     }
-    const changed = Object.keys(patch).filter(
-      (k) => this.values[k as keyof Settings] !== next[k as keyof Settings],
-    )
     this.values = next
     setMeta(this.db, META_KEY, JSON.stringify(this.values))
-    if (changed.length > 0) {
-      log.info(
-        'settings updated',
-        Object.fromEntries(changed.map((k) => [k, next[k as keyof Settings]])),
-      )
-      this.emit('change', this.all)
-    }
+    log.info('settings updated', { keys: Object.keys(patch) })
+    this.emit('change', this.all)
     return this.all
   }
 
   reset(): Settings {
-    this.values = { ...SETTINGS_DEFAULTS, priorityApps: [...SETTINGS_DEFAULTS.priorityApps] }
+    this.values = { ...SETTINGS_DEFAULTS, appPriority: {}, reserved: [] }
     setMeta(this.db, META_KEY, JSON.stringify(this.values))
     log.info('settings reset to defaults')
     this.emit('change', this.all)
     return this.all
   }
+}
+
+/** Validate an app-priority map: valid names, integer 0..PRIORITY_MAX; drop 0s. */
+function validatePriority(value: unknown): Record<string, number> {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    throw new Error('invalid appPriority')
+  }
+  const entries = Object.entries(value as Record<string, unknown>)
+  if (entries.length > 128) throw new Error('too many appPriority entries')
+  const out: Record<string, number> = {}
+  for (const [name, v] of entries) {
+    if (!APP_NAME_RE.test(name)) throw new Error(`invalid app name in appPriority: ${name}`)
+    if (typeof v !== 'number' || !Number.isInteger(v) || v < 0 || v > PRIORITY_MAX) {
+      throw new Error(`priority for ${name} must be an integer between 0 and ${PRIORITY_MAX}`)
+    }
+    if (v > 0) out[name] = v // 0 is the default; do not persist it
+  }
+  return out
 }
