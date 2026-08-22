@@ -4,9 +4,12 @@ import {
   Admission,
   HoldTimeoutError,
   QueueFullError,
+  type Grant,
   type GrantMeta,
 } from '../src/admission/queue.js'
 import type { Upstream } from '../src/upstream/client.js'
+
+const tick = (): Promise<void> => new Promise((r) => setTimeout(r, 10))
 
 /** Force one backstop poll on demand (the method is otherwise interval-driven). */
 const pollOutOfBand = (a: Admission): Promise<void> =>
@@ -20,14 +23,20 @@ const meta = (keyName = 'app-a'): GrantMeta => ({
 })
 
 function build(
-  overrides: Partial<{ cloneCap: number; maxQueue: number; maxHoldMs: number }> = {},
+  overrides: Partial<{
+    cloneCap: number
+    maxQueue: number
+    maxHoldMs: number
+    priorityApps: string[]
+  }> = {},
 ): Admission {
   return new Admission(null, {
     caps: { clone: overrides.cloneCap ?? 1, delete: 1, suspend: 1 },
-    maxQueue: overrides.maxQueue ?? 2,
+    maxQueue: overrides.maxQueue ?? 8,
     maxHoldMs: overrides.maxHoldMs ?? 200,
     taskPollMs: 1_000_000,
     taskTimeoutMs: 1_000_000,
+    priorityApps: overrides.priorityApps ?? [],
   })
 }
 
@@ -104,6 +113,7 @@ test('backstop discounts out-of-band cluster load and excludes vncproxy', async 
     maxHoldMs: 200,
     taskPollMs: 1_000_000,
     taskTimeoutMs: 1_000_000,
+    priorityApps: [],
   })
   await pollOutOfBand(admission)
 
@@ -131,6 +141,7 @@ test('backstop decays the discount to zero when the cluster is unreadable', asyn
     maxHoldMs: 200,
     taskPollMs: 1_000_000,
     taskTimeoutMs: 1_000_000,
+    priorityApps: [],
   })
   // Seed a stale discount, then confirm repeated read failures decay it away:
   // an unreadable cluster must never keep obstructing legitimate apps.
@@ -139,6 +150,71 @@ test('backstop decays the discount to zero when the cluster is unreadable', asyn
   await pollOutOfBand(admission)
   await pollOutOfBand(admission)
   assert.equal(admission.snapshot().classes.find((c) => c.name === 'clone')?.outOfBand, 0)
+})
+
+test('fairness: freed slots rotate round-robin across apps, not FIFO by arrival', async () => {
+  // cap 1. app-a holds the slot and queues two more; app-b queues one AFTER.
+  // FIFO would serve a1, a2, b1. Round-robin must interleave: a1, b1, a2.
+  const admission = build({ cloneCap: 1 })
+  const running = await admission.acquire(meta('app-a'))
+  const order: string[] = []
+  const resolved: Grant[] = []
+  const enq = (app: string): void => {
+    admission
+      .acquire(meta(app))
+      .then((g) => {
+        order.push(app)
+        resolved.push(g)
+      })
+      .catch(() => {})
+  }
+  enq('app-a')
+  enq('app-a')
+  await tick()
+  enq('app-b')
+  await tick()
+
+  running.release()
+  await tick()
+  assert.deepEqual(order, ['app-a'])
+  resolved[0].release()
+  await tick()
+  assert.deepEqual(order, ['app-a', 'app-b'])
+  resolved[1].release()
+  await tick()
+  assert.deepEqual(order, ['app-a', 'app-b', 'app-a'])
+  resolved[2].release()
+})
+
+test('priority: a listed app jumps ahead of everyone else', async () => {
+  const admission = build({ cloneCap: 1, priorityApps: ['vip'] })
+  const running = await admission.acquire(meta('app-a'))
+  const order: string[] = []
+  const resolved: Grant[] = []
+  const enq = (app: string): void => {
+    admission
+      .acquire(meta(app))
+      .then((g) => {
+        order.push(app)
+        resolved.push(g)
+      })
+      .catch(() => {})
+  }
+  enq('app-a')
+  enq('app-b')
+  await tick()
+  enq('vip') // arrives LAST but is on the priority list
+  await tick()
+
+  // The panel serving order (snapshot) already puts the priority app first.
+  const snap = admission.snapshot()
+  assert.deepEqual(snap.priorityApps, ['vip'])
+  assert.equal(snap.classes.find((c) => c.name === 'clone')?.waiting[0]?.keyName, 'vip')
+
+  running.release()
+  await tick()
+  assert.equal(order[0], 'vip') // served first despite arriving last
+  resolved.forEach((g) => g.release())
 })
 
 test('backstop does not count our own upid-less grants as out-of-band', async () => {
@@ -151,6 +227,7 @@ test('backstop does not count our own upid-less grants as out-of-band', async ()
     maxHoldMs: 200,
     taskPollMs: 1_000_000,
     taskTimeoutMs: 1_000_000,
+    priorityApps: [],
   })
   // Grant a clone but do NOT attach a UPID: the in-flight grant->attachTask window.
   const g = await admission.acquire(meta())

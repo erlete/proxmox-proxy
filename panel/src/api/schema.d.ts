@@ -246,6 +246,7 @@ export interface paths {
                     };
                     content: {
                         "application/json": {
+                            priorityApps: string[];
                             classes: {
                                 name: string;
                                 cap: number;
@@ -578,6 +579,7 @@ export interface paths {
                                 opsRingMax: number;
                                 sessionTtlHours: number;
                                 publicWsUrl: string;
+                                priorityApps: string[];
                             };
                             defaults: {
                                 cloneCap: number;
@@ -590,6 +592,7 @@ export interface paths {
                                 opsRingMax: number;
                                 sessionTtlHours: number;
                                 publicWsUrl: string;
+                                priorityApps: string[];
                             };
                         };
                     };
@@ -616,6 +619,7 @@ export interface paths {
                         opsRingMax?: number;
                         sessionTtlHours?: number;
                         publicWsUrl?: string;
+                        priorityApps?: string[];
                     };
                 };
             };
@@ -638,6 +642,7 @@ export interface paths {
                                 opsRingMax: number;
                                 sessionTtlHours: number;
                                 publicWsUrl: string;
+                                priorityApps: string[];
                             };
                             defaults: {
                                 cloneCap: number;
@@ -650,6 +655,7 @@ export interface paths {
                                 opsRingMax: number;
                                 sessionTtlHours: number;
                                 publicWsUrl: string;
+                                priorityApps: string[];
                             };
                         };
                     };
@@ -668,6 +674,68 @@ export interface paths {
             };
         };
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/settings/reset": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            settings: {
+                                cloneCap: number;
+                                deleteCap: number;
+                                suspendCap: number;
+                                maxQueue: number;
+                                maxHoldMs: number;
+                                taskPollMs: number;
+                                taskTimeoutMs: number;
+                                opsRingMax: number;
+                                sessionTtlHours: number;
+                                publicWsUrl: string;
+                                priorityApps: string[];
+                            };
+                            defaults: {
+                                cloneCap: number;
+                                deleteCap: number;
+                                suspendCap: number;
+                                maxQueue: number;
+                                maxHoldMs: number;
+                                taskPollMs: number;
+                                taskTimeoutMs: number;
+                                opsRingMax: number;
+                                sessionTtlHours: number;
+                                publicWsUrl: string;
+                                priorityApps: string[];
+                            };
+                        };
+                    };
+                };
+            };
+        };
         delete?: never;
         options?: never;
         head?: never;

@@ -3,7 +3,7 @@
   "info": {
     "title": "proxmox-proxy admin API",
     "description": "Management plane: keys, queues, operations, status.",
-    "version": "0.1.0"
+    "version": "0.2.0"
   },
   "components": {
     "schemas": {}
@@ -296,9 +296,16 @@
                 "schema": {
                   "type": "object",
                   "required": [
+                    "priorityApps",
                     "classes"
                   ],
                   "properties": {
+                    "priorityApps": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
                     "classes": {
                       "type": "array",
                       "items": {
@@ -950,7 +957,8 @@
                         "taskTimeoutMs",
                         "opsRingMax",
                         "sessionTtlHours",
-                        "publicWsUrl"
+                        "publicWsUrl",
+                        "priorityApps"
                       ],
                       "properties": {
                         "cloneCap": {
@@ -1001,6 +1009,13 @@
                         "publicWsUrl": {
                           "maxLength": 200,
                           "type": "string"
+                        },
+                        "priorityApps": {
+                          "maxItems": 64,
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
                         }
                       }
                     },
@@ -1016,7 +1031,8 @@
                         "taskTimeoutMs",
                         "opsRingMax",
                         "sessionTtlHours",
-                        "publicWsUrl"
+                        "publicWsUrl",
+                        "priorityApps"
                       ],
                       "properties": {
                         "cloneCap": {
@@ -1067,6 +1083,13 @@
                         "publicWsUrl": {
                           "maxLength": 200,
                           "type": "string"
+                        },
+                        "priorityApps": {
+                          "maxItems": 64,
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
                         }
                       }
                     }
@@ -1133,6 +1156,13 @@
                   "publicWsUrl": {
                     "maxLength": 200,
                     "type": "string"
+                  },
+                  "priorityApps": {
+                    "maxItems": 64,
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
                   }
                 }
               }
@@ -1163,7 +1193,8 @@
                         "taskTimeoutMs",
                         "opsRingMax",
                         "sessionTtlHours",
-                        "publicWsUrl"
+                        "publicWsUrl",
+                        "priorityApps"
                       ],
                       "properties": {
                         "cloneCap": {
@@ -1214,6 +1245,13 @@
                         "publicWsUrl": {
                           "maxLength": 200,
                           "type": "string"
+                        },
+                        "priorityApps": {
+                          "maxItems": 64,
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
                         }
                       }
                     },
@@ -1229,7 +1267,8 @@
                         "taskTimeoutMs",
                         "opsRingMax",
                         "sessionTtlHours",
-                        "publicWsUrl"
+                        "publicWsUrl",
+                        "priorityApps"
                       ],
                       "properties": {
                         "cloneCap": {
@@ -1280,6 +1319,13 @@
                         "publicWsUrl": {
                           "maxLength": 200,
                           "type": "string"
+                        },
+                        "priorityApps": {
+                          "maxItems": 64,
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
                         }
                       }
                     }
@@ -1300,6 +1346,176 @@
                   "properties": {
                     "message": {
                       "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/settings/reset": {
+      "post": {
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "settings",
+                    "defaults"
+                  ],
+                  "properties": {
+                    "settings": {
+                      "type": "object",
+                      "required": [
+                        "cloneCap",
+                        "deleteCap",
+                        "suspendCap",
+                        "maxQueue",
+                        "maxHoldMs",
+                        "taskPollMs",
+                        "taskTimeoutMs",
+                        "opsRingMax",
+                        "sessionTtlHours",
+                        "publicWsUrl",
+                        "priorityApps"
+                      ],
+                      "properties": {
+                        "cloneCap": {
+                          "minimum": 0,
+                          "maximum": 64,
+                          "type": "integer"
+                        },
+                        "deleteCap": {
+                          "minimum": 0,
+                          "maximum": 64,
+                          "type": "integer"
+                        },
+                        "suspendCap": {
+                          "minimum": 0,
+                          "maximum": 64,
+                          "type": "integer"
+                        },
+                        "maxQueue": {
+                          "minimum": 0,
+                          "maximum": 1000,
+                          "type": "integer"
+                        },
+                        "maxHoldMs": {
+                          "minimum": 1000,
+                          "maximum": 120000,
+                          "type": "integer"
+                        },
+                        "taskPollMs": {
+                          "minimum": 250,
+                          "maximum": 60000,
+                          "type": "integer"
+                        },
+                        "taskTimeoutMs": {
+                          "minimum": 10000,
+                          "maximum": 86400000,
+                          "type": "integer"
+                        },
+                        "opsRingMax": {
+                          "minimum": 100,
+                          "maximum": 1000000,
+                          "type": "integer"
+                        },
+                        "sessionTtlHours": {
+                          "minimum": 1,
+                          "maximum": 168,
+                          "type": "integer"
+                        },
+                        "publicWsUrl": {
+                          "maxLength": 200,
+                          "type": "string"
+                        },
+                        "priorityApps": {
+                          "maxItems": 64,
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    },
+                    "defaults": {
+                      "type": "object",
+                      "required": [
+                        "cloneCap",
+                        "deleteCap",
+                        "suspendCap",
+                        "maxQueue",
+                        "maxHoldMs",
+                        "taskPollMs",
+                        "taskTimeoutMs",
+                        "opsRingMax",
+                        "sessionTtlHours",
+                        "publicWsUrl",
+                        "priorityApps"
+                      ],
+                      "properties": {
+                        "cloneCap": {
+                          "minimum": 0,
+                          "maximum": 64,
+                          "type": "integer"
+                        },
+                        "deleteCap": {
+                          "minimum": 0,
+                          "maximum": 64,
+                          "type": "integer"
+                        },
+                        "suspendCap": {
+                          "minimum": 0,
+                          "maximum": 64,
+                          "type": "integer"
+                        },
+                        "maxQueue": {
+                          "minimum": 0,
+                          "maximum": 1000,
+                          "type": "integer"
+                        },
+                        "maxHoldMs": {
+                          "minimum": 1000,
+                          "maximum": 120000,
+                          "type": "integer"
+                        },
+                        "taskPollMs": {
+                          "minimum": 250,
+                          "maximum": 60000,
+                          "type": "integer"
+                        },
+                        "taskTimeoutMs": {
+                          "minimum": 10000,
+                          "maximum": 86400000,
+                          "type": "integer"
+                        },
+                        "opsRingMax": {
+                          "minimum": 100,
+                          "maximum": 1000000,
+                          "type": "integer"
+                        },
+                        "sessionTtlHours": {
+                          "minimum": 1,
+                          "maximum": 168,
+                          "type": "integer"
+                        },
+                        "publicWsUrl": {
+                          "maxLength": 200,
+                          "type": "string"
+                        },
+                        "priorityApps": {
+                          "maxItems": 64,
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        }
+                      }
                     }
                   }
                 }

@@ -71,7 +71,11 @@ export const QueueClassSchema = Type.Object({
   waiting: Type.Array(WaitingSchema),
 })
 
-export const QueuesReply = Type.Object({ classes: Type.Array(QueueClassSchema) })
+export const QueuesReply = Type.Object({
+  /** Manual admission priority order (app names); empty = round-robin. */
+  priorityApps: Type.Array(Type.String()),
+  classes: Type.Array(QueueClassSchema),
+})
 
 export const OperationSchema = Type.Object({
   id: Type.Integer(),
@@ -141,6 +145,7 @@ export const SettingsSchema = Type.Object({
   opsRingMax: Type.Integer({ minimum: 100, maximum: 1000000 }),
   sessionTtlHours: Type.Integer({ minimum: 1, maximum: 168 }),
   publicWsUrl: Type.String({ maxLength: 200 }),
+  priorityApps: Type.Array(Type.String(), { maxItems: 64 }),
 })
 
 export const SettingsPatch = Type.Partial(SettingsSchema)

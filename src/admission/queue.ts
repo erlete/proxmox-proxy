@@ -64,6 +64,12 @@ export interface AdmissionOpts {
   maxHoldMs: number
   taskPollMs: number
   taskTimeoutMs: number
+  /**
+   * Ordered app (key) names that get preference when a slot frees. Each listed
+   * app is its own strict tier in list order; every unlisted app shares the
+   * bottom tier and is served round-robin. Empty = pure round-robin fairness.
+   */
+  priorityApps: string[]
 }
 
 export interface TaskFinishedEvent {
@@ -100,32 +106,47 @@ const TASK_TYPE_CLASS: Record<string, OpClassName> = {
   qmsuspend: 'suspend',
 }
 
+interface ClassState {
+  cap: number
+  running: Map<number, Running>
+  /**
+   * Waiters split into one FIFO sub-queue per app (key name). Scheduling picks
+   * across apps for fairness; order WITHIN an app stays first-in-first-out.
+   */
+  waiting: Map<string, Waiter[]>
+}
+
 /**
- * Bounded admission per operation class. The key property: a slot is held
- * until the Proxmox TASK finishes, because the cluster cost of a clone or a
- * delete is the running task, not the HTTP request that spawned it.
+ * Bounded admission per operation class. Two key properties:
+ *   - a slot is held until the Proxmox TASK finishes, because the cluster cost
+ *     of a clone or a delete is the running task, not the HTTP request; and
+ *   - capacity is shared fairly across apps (max-min, work-conserving): one app
+ *     may use the whole class while alone, but as other apps start contending
+ *     the freed slots rotate to them, so no app monopolizes ordering. A manual
+ *     priority list can override the rotation with strict tiers.
  */
 export class Admission extends EventEmitter {
   private nextId = 1
-  private classes: Record<
-    OpClassName,
-    { cap: number; running: Map<number, Running>; waiting: Waiter[] }
-  >
+  private classes: Record<OpClassName, ClassState>
   private pollTimer: NodeJS.Timeout | null = null
   private changePending = false
   /** Contended cluster load that did NOT pass through the proxy (backstop). */
   private outOfBand: Record<OpClassName, number> = { clone: 0, delete: 0, suspend: 0 }
   private obPollErrors = 0
+  private priorityApps: string[]
+  /** Last app served from the bottom (round-robin) tier, per class. */
+  private rrCursor: Record<OpClassName, string> = { clone: '', delete: '', suspend: '' }
 
   constructor(
     private upstream: Upstream | null,
     private opts: AdmissionOpts,
   ) {
     super()
+    this.priorityApps = opts.priorityApps
     this.classes = {
-      clone: { cap: opts.caps.clone, running: new Map(), waiting: [] },
-      delete: { cap: opts.caps.delete, running: new Map(), waiting: [] },
-      suspend: { cap: opts.caps.suspend, running: new Map(), waiting: [] },
+      clone: { cap: opts.caps.clone, running: new Map(), waiting: new Map() },
+      delete: { cap: opts.caps.delete, running: new Map(), waiting: new Map() },
+      suspend: { cap: opts.caps.suspend, running: new Map(), waiting: new Map() },
     }
   }
 
@@ -146,10 +167,37 @@ export class Admission extends EventEmitter {
     return Math.max(0, this.classes[cls].cap - this.outOfBand[cls])
   }
 
-  /** Hot-apply new limits (panel settings). Raised caps pump waiting requests. */
+  private countWaiting(cls: OpClassName): number {
+    let n = 0
+    for (const q of this.classes[cls].waiting.values()) n += q.length
+    return n
+  }
+
+  /**
+   * Pick the app whose waiter should be granted next: the first app on the
+   * priority list that has a waiter (strict tiers, in list order), otherwise
+   * the next unlisted app in a stable round-robin rotation.
+   */
+  private pickWaiterApp(cls: OpClassName): string | null {
+    const state = this.classes[cls]
+    for (const name of this.priorityApps) {
+      if (state.waiting.get(name)?.length) return name
+    }
+    const rest = [...state.waiting.keys()]
+      .filter((a) => state.waiting.get(a)!.length > 0 && !this.priorityApps.includes(a))
+      .sort()
+    if (rest.length === 0) return null
+    const cursor = this.rrCursor[cls]
+    const next = rest.find((a) => a > cursor) ?? rest[0]
+    this.rrCursor[cls] = next
+    return next
+  }
+
+  /** Hot-apply new limits and priority (panel settings). */
   applyOpts(opts: AdmissionOpts): void {
     const pollChanged = opts.taskPollMs !== this.opts.taskPollMs
     this.opts = opts
+    this.priorityApps = opts.priorityApps
     for (const cls of OP_CLASSES) {
       this.classes[cls].cap = opts.caps[cls]
       this.pump(cls)
@@ -164,11 +212,13 @@ export class Admission extends EventEmitter {
   stop(): void {
     if (this.pollTimer) clearInterval(this.pollTimer)
     for (const cls of OP_CLASSES) {
-      for (const waiter of this.classes[cls].waiting) {
-        clearTimeout(waiter.timer)
-        waiter.reject(new HoldTimeoutError(5))
+      for (const q of this.classes[cls].waiting.values()) {
+        for (const waiter of q) {
+          clearTimeout(waiter.timer)
+          waiter.reject(new HoldTimeoutError(5))
+        }
       }
-      this.classes[cls].waiting = []
+      this.classes[cls].waiting.clear()
     }
   }
 
@@ -178,11 +228,12 @@ export class Admission extends EventEmitter {
 
     if (signal?.aborted) return Promise.reject(new ClientGoneError())
 
-    if (state.running.size < this.effectiveCap(meta.opClass) && state.waiting.length === 0) {
+    const waiting = this.countWaiting(meta.opClass)
+    if (state.running.size < this.effectiveCap(meta.opClass) && waiting === 0) {
       return Promise.resolve(this.grant(meta, enqueuedAt))
     }
 
-    if (state.waiting.length >= this.opts.maxQueue) {
+    if (waiting >= this.opts.maxQueue) {
       return Promise.reject(new QueueFullError(this.retryAfterSec(meta.opClass)))
     }
 
@@ -195,26 +246,30 @@ export class Admission extends EventEmitter {
         resolve,
         reject,
         timer: setTimeout(() => {
-          this.removeWaiter(meta.opClass, id)
+          this.removeWaiter(meta.opClass, meta.keyName, id)
           reject(new HoldTimeoutError(this.retryAfterSec(meta.opClass)))
         }, this.opts.maxHoldMs),
         cleanup: () => signal?.removeEventListener('abort', onAbort),
       }
       const onAbort = (): void => {
-        this.removeWaiter(meta.opClass, id)
+        this.removeWaiter(meta.opClass, meta.keyName, id)
         reject(new ClientGoneError())
       }
       signal?.addEventListener('abort', onAbort, { once: true })
-      state.waiting.push(waiter)
+      const q = state.waiting.get(meta.keyName)
+      if (q) q.push(waiter)
+      else state.waiting.set(meta.keyName, [waiter])
       this.changed()
     })
   }
 
-  private removeWaiter(cls: OpClassName, id: number): void {
-    const state = this.classes[cls]
-    const idx = state.waiting.findIndex((w) => w.id === id)
+  private removeWaiter(cls: OpClassName, app: string, id: number): void {
+    const q = this.classes[cls].waiting.get(app)
+    if (!q) return
+    const idx = q.findIndex((w) => w.id === id)
     if (idx < 0) return
-    const [waiter] = state.waiting.splice(idx, 1)
+    const [waiter] = q.splice(idx, 1)
+    if (q.length === 0) this.classes[cls].waiting.delete(app)
     clearTimeout(waiter.timer)
     waiter.cleanup()
     this.changed()
@@ -268,9 +323,12 @@ export class Admission extends EventEmitter {
 
   private pump(cls: OpClassName): void {
     const state = this.classes[cls]
-    while (state.running.size < this.effectiveCap(cls) && state.waiting.length > 0) {
-      const waiter = state.waiting.shift()
-      if (!waiter) break
+    while (state.running.size < this.effectiveCap(cls)) {
+      const app = this.pickWaiterApp(cls)
+      if (!app) break
+      const q = state.waiting.get(app)!
+      const waiter = q.shift()!
+      if (q.length === 0) state.waiting.delete(app)
       clearTimeout(waiter.timer)
       waiter.cleanup()
       waiter.resolve(this.grant(waiter.meta, waiter.enqueuedAt))
@@ -376,7 +434,20 @@ export class Admission extends EventEmitter {
 
   private retryAfterSec(cls: OpClassName): number {
     const state = this.classes[cls]
-    return Math.max(5, Math.ceil(((state.waiting.length + 1) / Math.max(1, state.cap)) * 10))
+    return Math.max(5, Math.ceil(((this.countWaiting(cls) + 1) / Math.max(1, state.cap)) * 10))
+  }
+
+  /** Waiters flattened in the order they will be served (for the panel). */
+  private orderedWaiters(cls: OpClassName): Waiter[] {
+    const state = this.classes[cls]
+    const out: Waiter[] = []
+    for (const name of this.priorityApps) {
+      const q = state.waiting.get(name)
+      if (q?.length) out.push(...q)
+    }
+    const rest = [...state.waiting.keys()].filter((a) => !this.priorityApps.includes(a)).sort()
+    for (const name of rest) out.push(...state.waiting.get(name)!)
+    return out
   }
 
   /** Throttled change notification for SSE consumers. */
@@ -390,6 +461,7 @@ export class Admission extends EventEmitter {
   }
 
   snapshot(): {
+    priorityApps: string[]
     classes: {
       name: OpClassName
       cap: number
@@ -408,6 +480,7 @@ export class Admission extends EventEmitter {
     }[]
   } {
     return {
+      priorityApps: [...this.priorityApps],
       classes: OP_CLASSES.map((name) => {
         const state = this.classes[name]
         return {
@@ -424,7 +497,7 @@ export class Admission extends EventEmitter {
             grantedAt: r.grantedAt,
             taskStartedAt: r.taskStartedAt,
           })),
-          waiting: state.waiting.map((w) => ({
+          waiting: this.orderedWaiters(name).map((w) => ({
             id: w.id,
             keyName: w.meta.keyName,
             vmid: w.meta.vmid,

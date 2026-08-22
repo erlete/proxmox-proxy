@@ -2,7 +2,7 @@ import { randomBytes, randomUUID } from 'node:crypto'
 import type { Server } from 'node:http'
 import type { FastifyInstance } from 'fastify'
 import { buildAdminServer } from './admin/server.js'
-import { Admission, type TaskFinishedEvent } from './admission/queue.js'
+import { Admission, type AdmissionOpts, type TaskFinishedEvent } from './admission/queue.js'
 import type { Config } from './config.js'
 import { getMeta, openDb, setMeta, type Db } from './db.js'
 import { createDataPlane } from './dataplane/server.js'
@@ -31,19 +31,14 @@ export interface App {
   close(): Promise<void>
 }
 
-function admissionOptsFrom(s: Settings): {
-  caps: { clone: number; delete: number; suspend: number }
-  maxQueue: number
-  maxHoldMs: number
-  taskPollMs: number
-  taskTimeoutMs: number
-} {
+function admissionOptsFrom(s: Settings): AdmissionOpts {
   return {
     caps: { clone: s.cloneCap, delete: s.deleteCap, suspend: s.suspendCap },
     maxQueue: s.maxQueue,
     maxHoldMs: s.maxHoldMs,
     taskPollMs: s.taskPollMs,
     taskTimeoutMs: s.taskTimeoutMs,
+    priorityApps: s.priorityApps,
   }
 }
 

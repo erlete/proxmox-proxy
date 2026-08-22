@@ -19,6 +19,12 @@ export interface Settings {
   sessionTtlHours: number
   /** Base URL apps use for direct VNC websockets. Empty = the upstream origin. */
   publicWsUrl: string
+  /**
+   * Ordered app (key) names that get admission preference. Each listed app is a
+   * strict tier in list order; everyone else shares the bottom tier round-robin.
+   * Empty = pure round-robin fairness across all apps.
+   */
+  priorityApps: string[]
 }
 
 export const SETTINGS_DEFAULTS: Settings = {
@@ -32,9 +38,12 @@ export const SETTINGS_DEFAULTS: Settings = {
   opsRingMax: 20_000,
   sessionTtlHours: 12,
   publicWsUrl: '',
+  priorityApps: [],
 }
 
-const BOUNDS: Record<keyof Omit<Settings, 'publicWsUrl'>, [number, number]> = {
+const APP_NAME_RE = /^[a-z0-9][a-z0-9-]{1,62}$/
+
+const BOUNDS: Record<keyof Omit<Settings, 'publicWsUrl' | 'priorityApps'>, [number, number]> = {
   cloneCap: [0, 64],
   deleteCap: [0, 64],
   suspendCap: [0, 64],
@@ -63,7 +72,8 @@ export class SettingsStore extends EventEmitter {
   }
 
   get all(): Settings {
-    return { ...this.values }
+    // Copy the array so callers can never mutate the stored priority order.
+    return { ...this.values, priorityApps: [...this.values.priorityApps] }
   }
 
   /** Validates, persists and applies a partial update. Throws on bad values. */
@@ -75,6 +85,14 @@ export class SettingsStore extends EventEmitter {
         if (typeof value !== 'string' || value.length > 200) throw new Error('invalid publicWsUrl')
         if (value !== '') new URL(value) // throws when not a URL
         next.publicWsUrl = value
+      } else if (key === 'priorityApps') {
+        if (!Array.isArray(value) || value.length > 64) throw new Error('invalid priorityApps')
+        for (const v of value) {
+          if (typeof v !== 'string' || !APP_NAME_RE.test(v)) {
+            throw new Error(`invalid app name in priorityApps: ${String(v)}`)
+          }
+        }
+        next.priorityApps = [...new Set(value as string[])] // dedupe, keep order
       } else {
         const [min, max] = BOUNDS[key]
         if (typeof value !== 'number' || !Number.isFinite(value) || value < min || value > max) {
@@ -99,7 +117,7 @@ export class SettingsStore extends EventEmitter {
   }
 
   reset(): Settings {
-    this.values = { ...SETTINGS_DEFAULTS }
+    this.values = { ...SETTINGS_DEFAULTS, priorityApps: [...SETTINGS_DEFAULTS.priorityApps] }
     setMeta(this.db, META_KEY, JSON.stringify(this.values))
     log.info('settings reset to defaults')
     this.emit('change', this.all)

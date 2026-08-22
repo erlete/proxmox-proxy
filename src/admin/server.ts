@@ -318,6 +318,11 @@ export async function buildAdminServer(deps: AdminDeps): Promise<FastifyInstance
     },
   )
 
+  app.post('/api/settings/reset', { schema: { response: { 200: SettingsReply } } }, async () => ({
+    settings: settings.reset(),
+    defaults: SETTINGS_DEFAULTS,
+  }))
+
   // Red button: stop a running Proxmox task (a wedged clone, a stray op). The
   // admission task poller notices the stop on its next tick and frees the slot.
   app.post(
