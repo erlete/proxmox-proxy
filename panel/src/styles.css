@@ -78,6 +78,11 @@ h2 {
   font-weight: 600;
 }
 
+.err-text {
+  color: var(--err);
+  font-weight: 600;
+}
+
 /* ---- shell ---- */
 
 .shell {
@@ -634,6 +639,29 @@ select:focus {
 
 .queue-head h2 {
   margin: 0;
+}
+
+/* A queue-head that doubles as a collapse toggle. */
+.collapse-head {
+  width: 100%;
+  background: none;
+  border: 0;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.collapse-head:hover .chevron {
+  color: var(--text);
+}
+
+.chevron {
+  transition: transform 0.15s ease;
+  flex-shrink: 0;
+}
+
+.chevron.closed {
+  transform: rotate(-90deg);
 }
 
 .queue-head-meta {

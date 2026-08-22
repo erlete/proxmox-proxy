@@ -60,6 +60,7 @@ interface ClusterVm {
   name?: string
   status?: string
   type?: string
+  template?: number
 }
 
 interface InventoryVm {
@@ -68,6 +69,7 @@ interface InventoryVm {
   name: string
   status: string
   type: string
+  template: boolean
 }
 
 const SESSION_COOKIE = 'pp_session'
@@ -106,6 +108,7 @@ export async function buildAdminServer(deps: AdminDeps): Promise<FastifyInstance
       name: r.name ?? '',
       status: r.status ?? 'unknown',
       type: r.type ?? 'qemu',
+      template: r.template === 1,
     }))
     invCache = { at: Date.now(), vms }
     return vms
@@ -393,21 +396,31 @@ export async function buildAdminServer(deps: AdminDeps): Promise<FastifyInstance
       raw = await loadClusterVms()
     } catch (err) {
       log.warn('inventory read failed', { error: String(err) })
-      return { apps: [], unassigned: [], upstreamOk: false }
+      return { reserved: [], apps: [], unassigned: [], upstreamOk: false }
     }
+    const byVmid = (a: InventoryVm, b: InventoryVm): number => a.vmid - b.vmid
     // Decorate with the reserved flag at response time (not cached) so a change
     // to the reserved ranges shows up immediately.
-    const reserved = settings.reservedRanges
-    const vms = raw.map((vm) => ({ ...vm, reserved: vmidAllowed(reserved, vm.vmid) }))
-    const apps = keys.list().map((k) => ({
-      name: k.name,
-      vmidRanges: k.vmidRanges,
-      vms: vms.filter((vm) => vmidAllowed(k.vmidRanges as VmidRange[], vm.vmid)),
-    }))
+    const reservedRanges = settings.reservedRanges
+    const vms = raw.map((vm) => ({ ...vm, reserved: vmidAllowed(reservedRanges, vm.vmid) }))
+    // A VM lands in exactly one bucket: reserved wins over app ownership, which
+    // wins over unassigned. Blocks sort apps by name, VMs by vmid.
+    const reserved = vms.filter((vm) => vm.reserved).sort(byVmid)
+    const apps = keys
+      .list()
+      .map((k) => ({
+        name: k.name,
+        vmidRanges: k.vmidRanges,
+        vms: vms
+          .filter((vm) => !vm.reserved && vmidAllowed(k.vmidRanges as VmidRange[], vm.vmid))
+          .sort(byVmid),
+      }))
+      .sort((a, b) => a.name.localeCompare(b.name))
     const assigned = new Set<number>()
+    for (const vm of reserved) assigned.add(vm.vmid)
     for (const app of apps) for (const vm of app.vms) assigned.add(vm.vmid)
-    const unassigned = vms.filter((vm) => !assigned.has(vm.vmid))
-    return { apps, unassigned, upstreamOk: true }
+    const unassigned = vms.filter((vm) => !assigned.has(vm.vmid)).sort(byVmid)
+    return { reserved, apps, unassigned, upstreamOk: true }
   })
 
   // Live queue/status stream for the panel.

@@ -933,6 +933,15 @@ export interface paths {
                     };
                     content: {
                         "application/json": {
+                            reserved: {
+                                vmid: number;
+                                node: string;
+                                name: string;
+                                status: string;
+                                type: string;
+                                template: boolean;
+                                reserved: boolean;
+                            }[];
                             apps: {
                                 name: string;
                                 vmidRanges: [
@@ -945,6 +954,7 @@ export interface paths {
                                     name: string;
                                     status: string;
                                     type: string;
+                                    template: boolean;
                                     reserved: boolean;
                                 }[];
                             }[];
@@ -954,6 +964,7 @@ export interface paths {
                                 name: string;
                                 status: string;
                                 type: string;
+                                template: boolean;
                                 reserved: boolean;
                             }[];
                             upstreamOk: boolean;

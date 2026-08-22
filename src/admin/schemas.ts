@@ -175,6 +175,8 @@ export const InventoryVmSchema = Type.Object({
   name: Type.String(),
   status: Type.String(),
   type: Type.String(),
+  /** A template has no power state: it is shown as a template, not stopped. */
+  template: Type.Boolean(),
   /** True when the VMID falls in a reserved range: off-limits to every app. */
   reserved: Type.Boolean(),
 })
@@ -186,6 +188,8 @@ export const InventoryAppSchema = Type.Object({
 })
 
 export const InventoryReply = Type.Object({
+  /** Live VMs in a reserved range: off-limits to every app, shown on top. */
+  reserved: Type.Array(InventoryVmSchema),
   /** VMs grouped by the app whose key ranges own their VMID. */
   apps: Type.Array(InventoryAppSchema),
   /** Live VMs that fall outside every key range: manual or orphaned. */

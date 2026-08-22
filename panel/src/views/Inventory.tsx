@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useState, type ReactElement } from 'react'
-import { Boxes, HardDrive, RefreshCw, TriangleAlert } from 'lucide-react'
+import { useCallback, useEffect, useState, type ReactElement, type ReactNode } from 'react'
+import { Boxes, ChevronDown, Lock, RefreshCw, TriangleAlert } from 'lucide-react'
 import { api } from '../api'
 import type { paths } from '../api/schema'
 
@@ -24,22 +24,56 @@ function VmTable({ vms }: { vms: Vm[] }): ReactElement {
       </thead>
       <tbody>
         {vms.map((vm) => (
-          <tr key={`${vm.node}-${vm.vmid}`} className={vm.reserved ? 'dim' : undefined}>
+          <tr key={`${vm.node}-${vm.vmid}`}>
             <td className="mono strong">{vm.vmid}</td>
             <td>{vm.name || <span className="muted">unnamed</span>}</td>
             <td>{vm.node}</td>
             <td className="inv-status">
-              {statusBadge(vm.status)}
-              {vm.reserved && (
-                <span className="badge err" title="reserved: the proxy will not touch this VM">
-                  reserved
+              {vm.template ? (
+                <span className="badge" title="template: a cloneable image, it has no power state">
+                  template
                 </span>
+              ) : (
+                statusBadge(vm.status)
               )}
             </td>
           </tr>
         ))}
       </tbody>
     </table>
+  )
+}
+
+// A card whose header toggles its body. Reuses the queue-class/queue-head look
+// so inventory blocks match the rest of the panel.
+function Section({
+  icon,
+  title,
+  meta,
+  children,
+}: {
+  icon: ReactNode
+  title: string
+  meta: ReactNode
+  children: ReactNode
+}): ReactElement {
+  const [open, setOpen] = useState(true)
+  return (
+    <section className="card queue-class">
+      <button
+        type="button"
+        className="queue-head collapse-head"
+        aria-expanded={open}
+        onClick={() => setOpen((v) => !v)}
+      >
+        <h2>
+          <ChevronDown size={15} className={`muted chevron${open ? '' : ' closed'}`} />
+          {icon} {title}
+        </h2>
+        <span className="muted">{meta}</span>
+      </button>
+      {open && children}
+    </section>
   )
 }
 
@@ -84,36 +118,39 @@ export function Inventory(): ReactElement {
         </div>
       )}
 
+      {inv.reserved.length > 0 && (
+        <Section
+          icon={<Lock size={15} className="err-text" />}
+          title="Reserved"
+          meta={`${inv.reserved.length} off-limits to every app`}
+        >
+          <VmTable vms={inv.reserved} />
+        </Section>
+      )}
+
       {inv.apps.map((app) => (
-        <section className="card queue-class" key={app.name}>
-          <div className="queue-head">
-            <h2>
-              <Boxes size={15} className="muted" /> {app.name}
-            </h2>
-            <span className="muted">
-              {app.vms.length} {app.vms.length === 1 ? 'VM' : 'VMs'}
-            </span>
-          </div>
+        <Section
+          key={app.name}
+          icon={<Boxes size={15} className="muted" />}
+          title={app.name}
+          meta={`${app.vms.length} ${app.vms.length === 1 ? 'VM' : 'VMs'}`}
+        >
           {app.vms.length === 0 ? (
             <div className="empty small">no live VMs in this app&apos;s ranges</div>
           ) : (
             <VmTable vms={app.vms} />
           )}
-        </section>
+        </Section>
       ))}
 
       {inv.unassigned.length > 0 && (
-        <section className="card queue-class">
-          <div className="queue-head">
-            <h2>
-              <TriangleAlert size={15} className="warn-text" /> Unassigned
-            </h2>
-            <span className="muted">
-              {inv.unassigned.length} outside every app range (manual or orphaned)
-            </span>
-          </div>
+        <Section
+          icon={<TriangleAlert size={15} className="warn-text" />}
+          title="Unassigned"
+          meta={`${inv.unassigned.length} outside every app range (manual or orphaned)`}
+        >
           <VmTable vms={inv.unassigned} />
-        </section>
+        </Section>
       )}
     </div>
   )

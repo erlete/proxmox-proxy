@@ -3,7 +3,7 @@
   "info": {
     "title": "proxmox-proxy admin API",
     "description": "Management plane: keys, queues, operations, status.",
-    "version": "0.4.0"
+    "version": "0.5.1"
   },
   "components": {
     "schemas": {}
@@ -1821,11 +1821,50 @@
                 "schema": {
                   "type": "object",
                   "required": [
+                    "reserved",
                     "apps",
                     "unassigned",
                     "upstreamOk"
                   ],
                   "properties": {
+                    "reserved": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "vmid",
+                          "node",
+                          "name",
+                          "status",
+                          "type",
+                          "template",
+                          "reserved"
+                        ],
+                        "properties": {
+                          "vmid": {
+                            "type": "integer"
+                          },
+                          "node": {
+                            "type": "string"
+                          },
+                          "name": {
+                            "type": "string"
+                          },
+                          "status": {
+                            "type": "string"
+                          },
+                          "type": {
+                            "type": "string"
+                          },
+                          "template": {
+                            "type": "boolean"
+                          },
+                          "reserved": {
+                            "type": "boolean"
+                          }
+                        }
+                      }
+                    },
                     "apps": {
                       "type": "array",
                       "items": {
@@ -1868,6 +1907,7 @@
                                 "name",
                                 "status",
                                 "type",
+                                "template",
                                 "reserved"
                               ],
                               "properties": {
@@ -1885,6 +1925,9 @@
                                 },
                                 "type": {
                                   "type": "string"
+                                },
+                                "template": {
+                                  "type": "boolean"
                                 },
                                 "reserved": {
                                   "type": "boolean"
@@ -1905,6 +1948,7 @@
                           "name",
                           "status",
                           "type",
+                          "template",
                           "reserved"
                         ],
                         "properties": {
@@ -1922,6 +1966,9 @@
                           },
                           "type": {
                             "type": "string"
+                          },
+                          "template": {
+                            "type": "boolean"
                           },
                           "reserved": {
                             "type": "boolean"
