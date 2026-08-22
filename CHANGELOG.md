@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.7.1](https://github.com/DLT-Code/proxmox-proxy/compare/v0.7.0...v0.7.1) (2026-08-22)
+
+
+### Bug Fixes
+
+* **panel:** use the app mark as the browser favicon ([e07ffcd](https://github.com/DLT-Code/proxmox-proxy/commit/e07ffcd423dda57ba0a95740136f0b2cc4839ba9))
+
 ## [0.7.0](https://github.com/DLT-Code/proxmox-proxy/compare/v0.6.0...v0.7.0) (2026-08-22)
 
 
