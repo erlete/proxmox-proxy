@@ -4,7 +4,7 @@ import type { AddressInfo } from 'node:net'
 import { test } from 'node:test'
 import type { Admission } from '../src/admission/queue.js'
 import { loadConfig } from '../src/config.js'
-import { createDataPlane } from '../src/dataplane/server.js'
+import { createDataPlaneHandler } from '../src/dataplane/server.js'
 import { openDb } from '../src/db.js'
 import { KeyStore } from '../src/keys/store.js'
 import { OpsLog } from '../src/ops.js'
@@ -63,17 +63,19 @@ function buildPlane(opts: {
     state: { ok: true, version: '8.4.1', checkedAt: Date.now(), error: null },
   } as HealthMonitor
 
-  const server = createDataPlane({
-    config,
-    keys,
-    settings,
-    upstream,
-    admission: opts.admission as Admission,
-    health,
-    console: new ConsoleBroker(upstream, null),
-    singletonHeld: () => opts.singletonHeld,
-    ops,
-  })
+  const server = createServer(
+    createDataPlaneHandler({
+      config,
+      keys,
+      settings,
+      upstream,
+      admission: opts.admission as Admission,
+      health,
+      console: new ConsoleBroker(upstream, null),
+      singletonHeld: () => opts.singletonHeld,
+      ops,
+    }),
+  )
 
   return {
     server,

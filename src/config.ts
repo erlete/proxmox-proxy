@@ -24,8 +24,8 @@ export interface Config {
   keysTokenUser: string
   dataDir: string
   bindHost: string
-  dataPort: number
-  adminPort: number
+  /** Single edge port: data plane and management plane are multiplexed by path. */
+  edgePort: number
   adminUser: string
   adminPasswordHash: string | null
   adminPassword: string | null
@@ -98,8 +98,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     keysTokenUser: optional(env, 'KEYS_TOKEN_USER') ?? 'svc-proxy@pve',
     dataDir: optional(env, 'DATA_DIR') ?? './data',
     bindHost: optional(env, 'BIND_HOST') ?? '0.0.0.0',
-    dataPort: int(env, 'DATA_PORT', 8080),
-    adminPort: int(env, 'ADMIN_PORT', 8081),
+    edgePort: int(env, 'EDGE_PORT', 8000),
     adminUser: optional(env, 'ADMIN_USER') ?? 'admin',
     adminPasswordHash,
     adminPassword,

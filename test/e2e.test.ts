@@ -141,16 +141,16 @@ before(async () => {
     SESSION_SECRET: 'test-secret',
     DATA_DIR: ':memory:',
     BIND_HOST: '127.0.0.1',
-    DATA_PORT: '0',
-    ADMIN_PORT: '0',
+    EDGE_PORT: '0',
     SINGLETON_POOL: 'testlock',
     PROXMOX_CONSOLE_USERNAME: 'svc-console@pve',
     PROXMOX_CONSOLE_PASSWORD: 'console-pw',
   })
   app = await createApp(config)
-  dataUrl = `http://127.0.0.1:${(app.dataServer.address() as AddressInfo).port}`
-  const adminAddr = app.admin.server.address() as AddressInfo
-  adminUrl = `http://127.0.0.1:${adminAddr.port}`
+  // One edge port multiplexes both planes by path, so both URLs are the same.
+  const edgeAddr = app.edge.address() as AddressInfo
+  dataUrl = `http://127.0.0.1:${edgeAddr.port}`
+  adminUrl = dataUrl
 })
 
 after(async () => {

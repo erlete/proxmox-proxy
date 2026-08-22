@@ -17,5 +17,5 @@ COPY --from=build /app/panel/dist ./panel/dist
 RUN mkdir -p /data && chown node:node /data
 USER node
 VOLUME /data
-EXPOSE 8080 8081
+EXPOSE 8000
 CMD ["node", "dist/index.js"]

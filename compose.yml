@@ -1,39 +1,33 @@
+# Single-service deploy: the app is the entrypoint and multiplexes the data
+# plane and the management panel on one port, so there is no reverse-proxy
+# sidecar. Fetch this file plus .env.example from a release, fill in .env, and
+# `docker compose up -d`. A real edge (TLS/domain/VPN) is expected in front.
+name: proxmox-proxy
+
 services:
-  caddy:
-    image: caddy:2
+  proxy:
+    image: ghcr.io/dlt-code/proxmox-proxy:${PROXY_IMAGE_TAG:-latest}
     restart: unless-stopped
-    # Caddy is the only exposed container. DEPLOY_HOST/DEPLOY_PORT decide on
-    # which network the proxy is reachable (default: loopback only).
+    env_file: .env
+    # Bind to loopback by default; DEPLOY_HOST/DEPLOY_PORT choose where the
+    # single port is published on the host.
     ports:
       - '${DEPLOY_HOST:-127.0.0.1}:${DEPLOY_PORT:-8000}:8000'
     volumes:
-      - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
-      - caddy_data:/data
-      - caddy_config:/config
-    depends_on:
-      - proxy
-    networks:
-      - internal
-
-  proxy:
-    # Published by the release workflow. `docker compose pull` fetches this on a
-    # deploy host; `docker compose up --build` still builds from source locally,
-    # tagging the same name. Pin a release with PROXY_IMAGE_TAG in .env.
-    image: ghcr.io/dlt-code/proxmox-proxy:${PROXY_IMAGE_TAG:-latest}
-    build: .
-    restart: unless-stopped
-    env_file: .env
-    environment:
-      DATA_DIR: /data
-    volumes:
-      - proxy_data:/data
-    networks:
-      - internal
-
-networks:
-  internal:
+      - data:/data
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:8000/api/health').then((r) => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
 
 volumes:
-  caddy_data:
-  caddy_config:
-  proxy_data:
+  # Fixed name (not project-prefixed) so re-deploys never orphan the SQLite
+  # state that holds the API keys, settings and operation log.
+  data:
+    name: proxmox-proxy-data

@@ -6,11 +6,11 @@ Es agnóstico de las aplicaciones que lo consumen: no conoce su dominio, solo su
 
 ## Arquitectura
 
-Dos planos en un solo proceso, con Caddy delante como único contenedor expuesto en `DEPLOY_HOST:DEPLOY_PORT` (por defecto solo loopback, `127.0.0.1:8000`; el TLS y el dominio son cosa del perímetro):
+Dos planos en un solo proceso y un **único puerto**: la propia app multiplexa por path, sin proxy inverso delante. Escucha en `DEPLOY_HOST:DEPLOY_PORT` (por defecto solo loopback, `127.0.0.1:8000`); el TLS, el dominio y la VPN son cosa del perímetro, que va delante.
 
 ```
-apps ──> Caddy :8000 ──(path /api2/*, /proxy/*)──> proxy :8080  (plano de datos: API Proxmox verbatim)
-operador ──> Caddy :8000 ──(resto de paths)──────> proxy :8081  (plano de gestión: panel + API admin)
+apps ─────(path /api2/*, /proxy/*)──> proxy :8000  (plano de datos: API Proxmox verbatim)
+operador ─(resto de paths)──────────> proxy :8000  (plano de gestión: panel + API admin)
 proxy ──https──> pveproxy :8006 (cuenta de servicio única)
 apps ──wss──> pveproxy :8006 (solo websockets VNC, directos por diseño)
 ```
@@ -44,17 +44,27 @@ PVEAPIToken=svc-proxy@pve!nombre-app=secreto
 
 ## Despliegue
 
+Se despliega desde una imagen publicada en `ghcr.io/dlt-code/proxmox-proxy`; no hace falta el código fuente en el host, solo `compose.yml` y un `.env`. Ambos plantilla vienen adjuntos a cada release:
+
 ```bash
-cp .env.example .env      # solo 2 variables obligatorias: upstream y token de servicio
-docker compose up -d --build
-docker compose logs proxy # primera arrancada: imprime la password del panel UNA vez
+gh release download -R DLT-Code/proxmox-proxy -p compose.yml -p .env.example
+cp .env.example .env        # 2 variables obligatorias: upstream y token de servicio
+docker login ghcr.io        # la imagen es privada (token con read:packages)
+docker compose up -d
+docker compose logs proxy   # primera arrancada: imprime la password del panel UNA vez
 ```
 
-Todo lo demás se autogenera y persiste (password del panel, secreto de sesión) o tiene un default razonable; ver la sección avanzada comentada de [.env.example](.env.example). La password del panel puede fijarse con `ADMIN_PASSWORD` o, mejor, `ADMIN_PASSWORD_HASH` (`npm run hash-password -- 'mi-password'`).
+Actualizar a la última versión publicada:
 
-El despliegue escucha en `DEPLOY_HOST:DEPLOY_PORT` (por defecto `127.0.0.1:8000`, solo local). El panel vive en la raíz de ese mismo puerto; las apps apuntan su cliente Proxmox a él con su clave (los paths `/api2/*` y `/proxy/*` van al plano de datos, el resto al panel). Los ajustes de runtime se tocan desde el panel, no desde el `.env`.
+```bash
+docker compose pull && docker compose up -d
+```
 
-La cuenta de servicio del proxy en Proxmox necesita: `VM.*` sobre las VMs custodiadas, `Sys.Audit`, y `Pool.Allocate` sobre `/pool` (el lock singleton vive en un pool). Tras desplegar el proxy, cierra pveproxy:8006 por firewall a todo lo que no sea el host del proxy (y la red de administración): la disciplina deja de ser voluntaria.
+`PROXY_IMAGE_TAG` en el `.env` fija una versión concreta (`PROXY_IMAGE_TAG=0.3.0`) en vez del `latest` móvil. Todo lo demás se autogenera y persiste (password del panel, secreto de sesión) o tiene un default razonable; ver la sección avanzada comentada de [.env.example](.env.example). La password del panel puede fijarse con `ADMIN_PASSWORD` o, mejor, `ADMIN_PASSWORD_HASH` (`npm run hash-password -- 'mi-password'`).
+
+Escucha en `DEPLOY_HOST:DEPLOY_PORT` (por defecto `127.0.0.1:8000`, solo local). El panel vive en la raíz de ese mismo puerto; las apps apuntan su cliente Proxmox a él con su clave (los paths `/api2/*` y `/proxy/*` van al plano de datos, el resto al panel). Los ajustes de runtime se tocan desde el panel, no desde el `.env`.
+
+La cuenta de servicio del proxy en Proxmox necesita: `VM.*` sobre las VMs custodiadas, `Sys.Audit`, y `Pool.Allocate` sobre `/pool` (el lock singleton vive en un pool). Tras desplegar el proxy, cierra `pveproxy:8006` por firewall a todo lo que no sea el host del proxy y la red de administración; deja abierto el camino directo de los websockets VNC a los nodos, porque las consolas no pasan por el proxy.
 
 Variables: ver [.env.example](.env.example), cada una documentada en el propio fichero.
 
@@ -62,19 +72,20 @@ Variables: ver [.env.example](.env.example), cada una documentada en el propio f
 
 ```bash
 npm install && npm install --prefix panel
-npm run dev                      # proxy con recarga (tsx watch)
-npm run dev --prefix panel       # panel Vite con proxy a :8081
+npm run dev                      # proxy con recarga (tsx watch), edge en :8000
+npm run dev --prefix panel       # panel Vite con proxy de /api a :8000
 npm test                         # unit + e2e contra un pveproxy falso
 npm run openapi                  # regenerar panel/openapi.json y los tipos del panel
 ```
 
 `SINGLETON_DISABLED=true` permite desarrollar sin cluster. La suite e2e levanta el proxy completo contra un Proxmox simulado y cubre auth, scopes, admisión y seguimiento de tareas.
 
-## Límites conocidos de v0 y hoja de ruta
+## Hoja de ruta
 
-- **Carga fuera de banda**: la web UI de Proxmox, `qm` por SSH y los backups no pasan por el proxy. Pendiente: sondear el task list del cluster como backstop de admisión.
-- **Fail-open vs fail-closed** ante fallo interno de la admisión: decisión pendiente (sesgo previsto: fail-open con log ruidoso).
-- **Carriles por aplicación** con equidad (round-robin / token bucket) y política hold-vs-429 por clave: v0 usa colas FIFO por clase de operación.
-- **Botón rojo**: parar una tarea en curso desde el panel.
-- **Inventario por aplicación**: la vista del cluster por rangos que la UI de Proxmox no puede dar.
+Ya implementado: admisión **fail-closed** ante fallo interno o pérdida del lock; **backstop** que descuenta de los caps la carga del cluster que no pasa por el proxy (las consolas `vncproxy` se excluyen a propósito); **equidad max-min por aplicación** (round-robin work-conserving) con **prioridad manual** por tiers configurable en caliente; **botón rojo** (parar una tarea en curso) e **inventario por aplicación** en el panel.
+
+Pendiente:
+
+- **Migración del resto de plataformas** detrás del proxy (portar el modo de token pre-aprovisionado, o un shim de `/access` en el proxy).
+- **Política hold-vs-429 por clave**: hoy es global (la petición espera hasta `maxHoldMs` y luego 429).
 - `node:sqlite` es experimental en Node 24; el acceso está aislado en `src/db.ts` para poder migrar a `better-sqlite3` con un cambio local si hiciera falta.

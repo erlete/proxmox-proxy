@@ -1,11 +1,11 @@
 import { randomBytes, randomUUID } from 'node:crypto'
-import type { Server } from 'node:http'
+import { createServer, type Server } from 'node:http'
 import type { FastifyInstance } from 'fastify'
 import { buildAdminServer } from './admin/server.js'
 import { Admission, type AdmissionOpts, type TaskFinishedEvent } from './admission/queue.js'
 import type { Config } from './config.js'
 import { getMeta, openDb, setMeta, type Db } from './db.js'
-import { createDataPlane } from './dataplane/server.js'
+import { createDataPlaneHandler } from './dataplane/server.js'
 import { KeyStore } from './keys/store.js'
 import { log } from './log.js'
 import { OpsLog } from './ops.js'
@@ -26,7 +26,8 @@ export interface App {
   health: HealthMonitor
   ops: OpsLog
   singleton: SingletonLock | null
-  dataServer: Server
+  /** Single edge server: data plane and management plane multiplexed by path. */
+  edge: Server
   admin: FastifyInstance
   close(): Promise<void>
 }
@@ -109,7 +110,7 @@ export async function createApp(config: Config, onFatal?: () => void): Promise<A
 
   const consoleBroker = new ConsoleBroker(upstream, config.console)
 
-  const dataServer = createDataPlane({
+  const dataHandler = createDataPlaneHandler({
     config,
     keys,
     settings,
@@ -119,10 +120,6 @@ export async function createApp(config: Config, onFatal?: () => void): Promise<A
     console: consoleBroker,
     singletonHeld,
     ops,
-  })
-  await new Promise<void>((resolve, reject) => {
-    dataServer.once('error', reject)
-    dataServer.listen(config.dataPort, config.bindHost, resolve)
   })
 
   const admin = await buildAdminServer({
@@ -135,7 +132,28 @@ export async function createApp(config: Config, onFatal?: () => void): Promise<A
     upstream,
     singletonHeld,
   })
-  await admin.listen({ port: config.adminPort, host: config.bindHost })
+  await admin.ready()
+
+  // Single edge: the data plane owns /api2/* and /proxy/*, the management plane
+  // owns everything else. Multiplexing by path in-process means the deploy is
+  // one container on one port, with no sidecar reverse proxy to configure.
+  const edge = createServer((req, res) => {
+    const path = (req.url ?? '/').split('?', 1)[0]
+    if (
+      path === '/api2' ||
+      path.startsWith('/api2/') ||
+      path === '/proxy' ||
+      path.startsWith('/proxy/')
+    ) {
+      dataHandler(req, res)
+    } else {
+      admin.routing(req, res)
+    }
+  })
+  await new Promise<void>((resolve, reject) => {
+    edge.once('error', reject)
+    edge.listen(config.edgePort, config.bindHost, resolve)
+  })
 
   let closed = false
   const close = async (): Promise<void> => {
@@ -146,16 +164,15 @@ export async function createApp(config: Config, onFatal?: () => void): Promise<A
     // Release the cluster lock FIRST: server close can be slowed down by
     // lingering connections and the successor must be able to take over.
     if (singleton) await singleton.release()
-    const dataClosed = new Promise<void>((resolve) => dataServer.close(() => resolve()))
-    dataServer.closeAllConnections()
-    await Promise.all([admin.close(), dataClosed])
+    const edgeClosed = new Promise<void>((resolve) => edge.close(() => resolve()))
+    edge.closeAllConnections()
+    await Promise.all([admin.close(), edgeClosed])
     await upstream.close().catch(() => {})
     db.close()
   }
 
   log.info('proxmox-proxy up', {
-    dataPort: config.dataPort,
-    adminPort: config.adminPort,
+    edgePort: config.edgePort,
     upstream: config.upstreamUrl.origin,
     singleton: config.singleton.disabled ? 'disabled' : 'held',
   })
@@ -170,7 +187,7 @@ export async function createApp(config: Config, onFatal?: () => void): Promise<A
     health,
     ops,
     singleton,
-    dataServer,
+    edge,
     admin,
     close,
   }

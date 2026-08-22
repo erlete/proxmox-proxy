@@ -25,8 +25,7 @@ const config = loadConfig({
   SESSION_SECRET: 'verify-live',
   DATA_DIR: ':memory:',
   BIND_HOST: '127.0.0.1',
-  DATA_PORT: '0',
-  ADMIN_PORT: '0',
+  EDGE_PORT: '0',
 })
 
 const step = (msg: string): void => console.log(`\n== ${msg}`)
@@ -42,8 +41,9 @@ async function waitFor(desc: string, fn: () => Promise<boolean>, ms = 120_000): 
 
 step('booting proxy against the real cluster (acquiring singleton lock)')
 const app = await createApp(config)
-const dataUrl = `http://127.0.0.1:${(app.dataServer.address() as { port: number }).port}`
-const adminUrl = `http://127.0.0.1:${(app.admin.server.address() as { port: number }).port}`
+const edgePort = (app.edge.address() as { port: number }).port
+const dataUrl = `http://127.0.0.1:${edgePort}`
+const adminUrl = dataUrl
 
 try {
   step('singleton duel: a second instance must refuse to start')

@@ -1,4 +1,4 @@
-import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http'
+import type { IncomingMessage, RequestListener, ServerResponse } from 'node:http'
 import { pipeline } from 'node:stream'
 import type { Dispatcher } from 'undici'
 import { authorize, classify, type Classified } from '../admission/classify.js'
@@ -112,7 +112,11 @@ function extractNewid(body: Buffer, contentType: string | undefined): number | n
   }
 }
 
-export function createDataPlane(deps: DataPlaneDeps): Server {
+/**
+ * The data-plane request handler. Mounted by the app under a single edge server
+ * that routes `/api2/*` and `/proxy/*` here; there is no separate listener.
+ */
+export function createDataPlaneHandler(deps: DataPlaneDeps): RequestListener {
   const { config, keys, settings, upstream, admission, health, console: consoleBroker, ops } = deps
   const serviceAuth = `PVEAPIToken=${config.serviceToken}`
 
@@ -395,7 +399,7 @@ export function createDataPlane(deps: DataPlaneDeps): Server {
     }
   }
 
-  const server = createServer((req, res) => {
+  return (req, res) => {
     void (async () => {
       const started = Date.now()
       const url = new URL(req.url ?? '/', 'http://internal')
@@ -499,7 +503,5 @@ export function createDataPlane(deps: DataPlaneDeps): Server {
       log.error('data plane handler crash', { error: String(err) })
       sendJson(res, 500, { message: 'internal proxy error' })
     })
-  })
-
-  return server
+  }
 }
