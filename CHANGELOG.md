@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.0](https://github.com/DLT-Code/proxmox-proxy/compare/v0.3.0...v0.4.0) (2026-08-22)
+
+
+### Features
+
+* **keys:** purge revoked records; protect the show-once config modal ([483eff6](https://github.com/DLT-Code/proxmox-proxy/commit/483eff64c9df82a565bfa241c91c7b6f0354915d))
+
 ## [0.3.0](https://github.com/DLT-Code/proxmox-proxy/compare/v0.2.0...v0.3.0) (2026-08-22)
 
 
