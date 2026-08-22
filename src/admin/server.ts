@@ -7,12 +7,14 @@ import type { TypeBoxTypeProvider } from '@fastify/type-provider-typebox'
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from 'fastify'
 import type { Admission } from '../admission/queue.js'
 import type { Config } from '../config.js'
-import { vmidAllowed, type KeyStore, type VmidRange } from '../keys/store.js'
+import type { VlanLeaseStore } from '../dataplane/leases.js'
+import { rangesOverlap, vmidAllowed, type KeyStore, type VmidRange } from '../keys/store.js'
 import { log } from '../log.js'
 import type { OpsLog } from '../ops.js'
 import { verifyPassword } from '../password.js'
 import { signSession, verifySession } from '../session.js'
 import { SETTINGS_DEFAULTS, type Settings, type SettingsStore } from '../settings.js'
+import { ClusterSnapshot, type ClusterVm } from '../upstream/cluster.js'
 import { UpstreamError, type Upstream } from '../upstream/client.js'
 import type { HealthMonitor } from '../upstream/health.js'
 import {
@@ -21,6 +23,7 @@ import {
   HealthReply,
   InventoryReply,
   KeyListReply,
+  LeasesReply,
   LoginBody,
   MeReply,
   OperationsQuery,
@@ -43,6 +46,8 @@ export interface AdminDeps {
   health: HealthMonitor
   ops: OpsLog
   upstream: Upstream
+  cluster: ClusterSnapshot
+  leases: VlanLeaseStore
   singletonHeld: () => boolean
 }
 
@@ -52,24 +57,6 @@ function nodeFromUpid(upid: string): string | null {
   if (parts[0] !== 'UPID') return null
   const node = parts[1]
   return /^[A-Za-z0-9._-]{1,63}$/.test(node) ? node : null
-}
-
-interface ClusterVm {
-  vmid: number
-  node: string
-  name?: string
-  status?: string
-  type?: string
-  template?: number
-}
-
-interface InventoryVm {
-  vmid: number
-  node: string
-  name: string
-  status: string
-  type: string
-  template: boolean
 }
 
 const SESSION_COOKIE = 'pp_session'
@@ -92,27 +79,9 @@ interface LoginAttempts {
 }
 
 export async function buildAdminServer(deps: AdminDeps): Promise<FastifyInstance> {
-  const { config, keys, settings, admission, health, ops, upstream } = deps
+  const { config, keys, settings, admission, health, ops, upstream, cluster, leases } = deps
   const version = readVersion()
   const attempts = new Map<string, LoginAttempts>()
-
-  // Inventory hits the cluster; a short cache keeps panel polling cheap.
-  let invCache: { at: number; vms: InventoryVm[] } | null = null
-  const INVENTORY_TTL_MS = 5_000
-  const loadClusterVms = async (): Promise<InventoryVm[]> => {
-    if (invCache && Date.now() - invCache.at < INVENTORY_TTL_MS) return invCache.vms
-    const rows = await upstream.api<ClusterVm[]>('GET', '/cluster/resources?type=vm')
-    const vms: InventoryVm[] = rows.map((r) => ({
-      vmid: r.vmid,
-      node: r.node,
-      name: r.name ?? '',
-      status: r.status ?? 'unknown',
-      type: r.type ?? 'qemu',
-      template: r.template === 1,
-    }))
-    invCache = { at: Date.now(), vms }
-    return vms
-  }
 
   // forceCloseConnections: live SSE streams must never block a shutdown
   // (a hanging close would kill the process before releasing the cluster lock).
@@ -249,6 +218,11 @@ export async function buildAdminServer(deps: AdminDeps): Promise<FastifyInstance
     async (req, reply) => {
       const { name, vmidRanges, comment } = req.body
       if (keys.get(name)) return reply.code(409).send({ message: `key already exists: ${name}` })
+      // Reserved ranges are enforced as configuration, not per-operation: an app
+      // range may never include a reserved VMID, so its own scope keeps it away.
+      if (rangesOverlap(vmidRanges as VmidRange[], settings.reservedRanges)) {
+        return reply.code(400).send({ message: 'vmid ranges overlap a reserved range' })
+      }
       try {
         const token = keys.create(name, vmidRanges as VmidRange[], comment ?? '')
         log.info('api key created', { name })
@@ -336,8 +310,21 @@ export async function buildAdminServer(deps: AdminDeps): Promise<FastifyInstance
     '/api/settings',
     { schema: { body: SettingsPatch, response: { 200: SettingsReply, 400: ErrorReply } } },
     async (req, reply) => {
+      const patch = req.body as Partial<Settings>
+      // A reserved range may never cover a VMID an app already owns: reject the
+      // change here (settings has no view of keys) before it is persisted.
+      if (patch.reserved !== undefined) {
+        const clashing = keys
+          .list()
+          .find((k) => rangesOverlap(patch.reserved as VmidRange[], k.vmidRanges as VmidRange[]))
+        if (clashing) {
+          return reply.code(400).send({
+            message: `reserved range overlaps the ranges of key "${clashing.name}"`,
+          })
+        }
+      }
       try {
-        const updated = settings.update(req.body as Partial<Settings>)
+        const updated = settings.update(patch)
         return reply.send({ settings: updated, defaults: SETTINGS_DEFAULTS })
       } catch (err) {
         return reply.code(400).send({ message: String(err instanceof Error ? err.message : err) })
@@ -391,14 +378,14 @@ export async function buildAdminServer(deps: AdminDeps): Promise<FastifyInstance
   // the VMs that belong to no range (manual or orphaned). Sourced from the
   // cluster itself, so it surfaces residue an app may have lost track of.
   app.get('/api/inventory', { schema: { response: { 200: InventoryReply } } }, async () => {
-    let raw: InventoryVm[]
+    let raw: ClusterVm[]
     try {
-      raw = await loadClusterVms()
+      raw = await cluster.vms()
     } catch (err) {
       log.warn('inventory read failed', { error: String(err) })
       return { reserved: [], apps: [], unassigned: [], upstreamOk: false }
     }
-    const byVmid = (a: InventoryVm, b: InventoryVm): number => a.vmid - b.vmid
+    const byVmid = (a: { vmid: number }, b: { vmid: number }): number => a.vmid - b.vmid
     // Decorate with the reserved flag at response time (not cached) so a change
     // to the reserved ranges shows up immediately.
     const reservedRanges = settings.reservedRanges
@@ -422,6 +409,12 @@ export async function buildAdminServer(deps: AdminDeps): Promise<FastifyInstance
     const unassigned = vms.filter((vm) => !assigned.has(vm.vmid)).sort(byVmid)
     return { reserved, apps, unassigned, upstreamOk: true }
   })
+
+  // VLAN tags the proxy has leased to linked-clone groups (self-freed when the
+  // pod is gone). Surfaced so an operator can see what the linked range holds.
+  app.get('/api/leases', { schema: { response: { 200: LeasesReply } } }, async () => ({
+    leases: leases.list(),
+  }))
 
   // Live queue/status stream for the panel.
   app.get('/api/events', (req, reply) => {

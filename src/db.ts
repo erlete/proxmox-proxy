@@ -53,6 +53,13 @@ export function openDb(dataDir: string): Db {
       key TEXT PRIMARY KEY,
       value TEXT NOT NULL
     );
+    CREATE TABLE IF NOT EXISTS vlan_leases (
+      vlan INTEGER PRIMARY KEY,
+      vmids TEXT NOT NULL,
+      key_name TEXT NOT NULL,
+      node TEXT NOT NULL,
+      created_at INTEGER NOT NULL
+    );
   `)
   return db
 }

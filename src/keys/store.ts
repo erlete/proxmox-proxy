@@ -29,6 +29,11 @@ export function vmidAllowed(ranges: VmidRange[], vmid: number): boolean {
   return ranges.some(([min, max]) => vmid >= min && vmid <= max)
 }
 
+/** True when any range in `a` overlaps any range in `b` (inclusive bounds). */
+export function rangesOverlap(a: VmidRange[], b: VmidRange[]): boolean {
+  return a.some(([a0, a1]) => b.some(([b0, b1]) => a0 <= b1 && b0 <= a1))
+}
+
 export function validRanges(ranges: unknown): ranges is VmidRange[] {
   if (!Array.isArray(ranges) || ranges.length === 0) return false
   return ranges.every(

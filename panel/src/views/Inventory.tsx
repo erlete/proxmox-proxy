@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useState, type ReactElement, type ReactNode } from 'react'
-import { Boxes, ChevronDown, Lock, RefreshCw, TriangleAlert } from 'lucide-react'
+import { Boxes, ChevronDown, Lock, Network, RefreshCw, TriangleAlert } from 'lucide-react'
 import { api } from '../api'
 import type { paths } from '../api/schema'
 
 type Inventory = paths['/api/inventory']['get']['responses'][200]['content']['application/json']
 type Vm = Inventory['apps'][number]['vms'][number]
+type Leases = paths['/api/leases']['get']['responses'][200]['content']['application/json']
+type Lease = Leases['leases'][number]
 
 function statusBadge(status: string): ReactElement {
   const cls = status === 'running' ? 'badge ok' : status === 'stopped' ? 'badge' : 'badge warn'
@@ -77,14 +79,44 @@ function Section({
   )
 }
 
+function LeaseTable({ leases }: { leases: Lease[] }): ReactElement {
+  return (
+    <table>
+      <thead>
+        <tr>
+          <th>vlan</th>
+          <th>vmids</th>
+          <th>app</th>
+          <th>node</th>
+        </tr>
+      </thead>
+      <tbody>
+        {leases.map((l) => (
+          <tr key={l.vlan}>
+            <td className="mono strong">{l.vlan}</td>
+            <td className="mono">{l.vmids.join(', ')}</td>
+            <td>{l.keyName}</td>
+            <td>{l.node}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  )
+}
+
 export function Inventory(): ReactElement {
   const [inv, setInv] = useState<Inventory | null>(null)
+  const [leases, setLeases] = useState<Lease[]>([])
   const [loading, setLoading] = useState(true)
 
   const load = useCallback(async (): Promise<void> => {
     setLoading(true)
-    const { data } = await api.GET('/api/inventory')
+    const [{ data }, { data: leaseData }] = await Promise.all([
+      api.GET('/api/inventory'),
+      api.GET('/api/leases'),
+    ])
     if (data) setInv(data)
+    if (leaseData) setLeases(leaseData.leases)
     setLoading(false)
   }, [])
 
@@ -150,6 +182,16 @@ export function Inventory(): ReactElement {
           meta={`${inv.unassigned.length} outside every app range (manual or orphaned)`}
         >
           <VmTable vms={inv.unassigned} />
+        </Section>
+      )}
+
+      {leases.length > 0 && (
+        <Section
+          icon={<Network size={15} className="muted" />}
+          title="Leased VLANs"
+          meta={`${leases.length} in use by linked-clone groups`}
+        >
+          <LeaseTable leases={leases} />
         </Section>
       )}
     </div>

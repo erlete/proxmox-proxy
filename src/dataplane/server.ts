@@ -1,7 +1,7 @@
 import type { IncomingMessage, RequestListener, ServerResponse } from 'node:http'
 import { pipeline } from 'node:stream'
 import type { Dispatcher } from 'undici'
-import { authorize, classify, type Classified } from '../admission/classify.js'
+import { authorize, classify, vmidFromUpid, type Classified } from '../admission/classify.js'
 import {
   Admission,
   ClientGoneError,
@@ -16,8 +16,15 @@ import { log } from '../log.js'
 import type { OpsLog } from '../ops.js'
 import type { SettingsStore } from '../settings.js'
 import { ConsoleDisabledError, type ConsoleBroker } from '../upstream/console.js'
+import type { ClusterSnapshot } from '../upstream/cluster.js'
 import type { HealthMonitor } from '../upstream/health.js'
 import { UpstreamError, type Upstream } from '../upstream/client.js'
+import type { IdAllocator } from './allocator.js'
+import {
+  LinkedCloneError,
+  type LinkedCloneRequest,
+  type LinkedCloneService,
+} from './linkedclone.js'
 
 export interface DataPlaneDeps {
   config: Config
@@ -27,6 +34,9 @@ export interface DataPlaneDeps {
   admission: Admission
   health: HealthMonitor
   console: ConsoleBroker
+  cluster: ClusterSnapshot
+  ids: IdAllocator
+  linkedClone: LinkedCloneService
   singletonHeld: () => boolean
   ops: OpsLog
 }
@@ -47,6 +57,8 @@ const REQ_STRIP = new Set([
 const RESP_STRIP = new Set(['connection', 'keep-alive', 'transfer-encoding', 'upgrade', 'trailer'])
 
 const MAX_HEAVY_BODY = 1024 * 1024
+
+const READ_METHODS = new Set(['GET', 'HEAD', 'OPTIONS'])
 
 class PayloadTooLargeError extends Error {}
 
@@ -118,12 +130,41 @@ function extractBodyVmid(
   }
 }
 
+/** Return a body with `param` set to `value`, preserving the encoding. */
+function injectBodyVmid(
+  body: Buffer,
+  contentType: string | undefined,
+  param: string,
+  value: number,
+): Buffer {
+  if (contentType?.includes('application/json')) {
+    const obj = body.length ? (JSON.parse(body.toString()) as Record<string, unknown>) : {}
+    obj[param] = value
+    return Buffer.from(JSON.stringify(obj))
+  }
+  const params = new URLSearchParams(body.toString())
+  params.set(param, String(value))
+  return Buffer.from(params.toString())
+}
+
 /**
  * The data-plane request handler. Mounted by the app under a single edge server
  * that routes `/api2/*` and `/proxy/*` here; there is no separate listener.
  */
 export function createDataPlaneHandler(deps: DataPlaneDeps): RequestListener {
-  const { config, keys, settings, upstream, admission, health, console: consoleBroker, ops } = deps
+  const {
+    config,
+    keys,
+    settings,
+    upstream,
+    admission,
+    health,
+    console: consoleBroker,
+    cluster,
+    ids,
+    linkedClone,
+    ops,
+  } = deps
   const serviceAuth = `PVEAPIToken=${config.serviceToken}`
 
   const healthBody = (): Record<string, unknown> => ({
@@ -135,6 +176,32 @@ export function createDataPlaneHandler(deps: DataPlaneDeps): RequestListener {
     },
     singleton: { enabled: !config.singleton.disabled, held: deps.singletonHeld() },
   })
+
+  /**
+   * Templates are read-only through the proxy: a template is never deleted and
+   * never mutated (cloning FROM it is the one write allowed, handled elsewhere).
+   * Returns a 403 message to deny, or null to allow. Fails closed on DELETE if
+   * the cluster cannot be read, so a golden image is never destroyed blind.
+   */
+  async function templateGuard(method: string, cls: Classified): Promise<string | null> {
+    if (READ_METHODS.has(method) || cls.opClass === 'clone' || cls.pathVmid == null) return null
+    try {
+      const vm = await cluster.byVmid(cls.pathVmid)
+      if (vm?.template) {
+        return 'templates are read-only through the proxy; cloning is the only write allowed'
+      }
+      return null
+    } catch (err) {
+      if (method === 'DELETE') {
+        log.warn('template guard could not read the cluster, refusing delete', {
+          vmid: cls.pathVmid,
+          error: String(err),
+        })
+        return '__unavailable__'
+      }
+      return null
+    }
+  }
 
   async function handleHeavy(
     req: IncomingMessage,
@@ -164,26 +231,31 @@ export function createDataPlaneHandler(deps: DataPlaneDeps): RequestListener {
       return // client went away mid-body
     }
 
-    // A clone names its target in the body: that VMID must also be in range.
+    // A clone names its target in the body. The proxy owns id selection: if the
+    // app omits newid we assign the lowest free id in its ranges and inject it;
+    // if it sends one, it must be in range. The created id is discoverable from
+    // the returned qmclone UPID, so the app never needs to pick it.
+    let assignedNewid: number | null = null
     if (cls.opClass === 'clone') {
-      const newid = extractBodyVmid(body, req.headers['content-type'], 'newid')
+      const ct = req.headers['content-type']
+      let newid = extractBodyVmid(body, ct, 'newid')
       if (newid == null) {
-        sendJson(res, 400, { message: 'clone through the proxy requires an explicit newid' })
-        return
-      }
-      if (vmidAllowed(settings.reservedRanges, newid)) {
-        sendJson(res, 403, { message: `newid ${newid} is reserved` })
-        ops.record({
-          ...base,
-          status: 403,
-          queueMs: null,
-          durationMs: null,
-          upid: null,
-          note: 'reserved-newid',
-        })
-        return
-      }
-      if (!vmidAllowed(key.vmidRanges, newid)) {
+        newid = await ids.allocate(key.vmidRanges)
+        if (newid == null) {
+          sendJson(res, 507, { message: 'the vmid ranges of this key are exhausted' })
+          ops.record({
+            ...base,
+            status: 507,
+            queueMs: null,
+            durationMs: null,
+            upid: null,
+            note: 'ranges-exhausted',
+          })
+          return
+        }
+        assignedNewid = newid
+        body = injectBodyVmid(body, ct, 'newid', newid)
+      } else if (!vmidAllowed(key.vmidRanges, newid)) {
         sendJson(res, 403, { message: `newid ${newid} is outside the ranges of this key` })
         ops.record({
           ...base,
@@ -211,6 +283,7 @@ export function createDataPlaneHandler(deps: DataPlaneDeps): RequestListener {
       )
     } catch (err) {
       settled = true
+      if (assignedNewid != null) ids.release(assignedNewid)
       if (err instanceof QueueFullError || err instanceof HoldTimeoutError) {
         const note = err instanceof QueueFullError ? 'queue-full' : 'hold-timeout'
         res.setHeader('retry-after', String(err.retryAfterSec))
@@ -271,8 +344,14 @@ export function createDataPlaneHandler(deps: DataPlaneDeps): RequestListener {
       if (upid) grant.attachTask(upid)
       else grant.release(r.statusCode < 400 ? 'no-task' : `upstream-${r.statusCode}`)
 
+      // A freshly assigned id that did not take must be handed back at once; a
+      // successful clone means the inventory is now stale, so refresh it.
+      if (assignedNewid != null && r.statusCode >= 400) ids.release(assignedNewid)
+      if (cls.opClass === 'clone' && r.statusCode < 400) cluster.invalidate()
+
       ops.record({
         ...base,
+        vmid: assignedNewid ?? base.vmid,
         status: r.statusCode,
         queueMs: grant.queueMs,
         durationMs: Date.now() - started,
@@ -287,6 +366,7 @@ export function createDataPlaneHandler(deps: DataPlaneDeps): RequestListener {
       res.end(respBuf)
     } catch (err) {
       grant.release('upstream-error')
+      if (assignedNewid != null) ids.release(assignedNewid)
       settled = true
       sendJson(res, 502, { message: 'upstream unavailable' })
       ops.record({
@@ -330,10 +410,6 @@ export function createDataPlaneHandler(deps: DataPlaneDeps): RequestListener {
     const vmid = typeof body.vmid === 'number' ? body.vmid : Number.NaN
     if (!/^[A-Za-z0-9._-]{1,63}$/.test(node) || !Number.isInteger(vmid) || vmid <= 0) {
       sendJson(res, 400, { message: 'expected a JSON body: {node, vmid}' })
-      return
-    }
-    if (vmidAllowed(settings.reservedRanges, vmid)) {
-      sendJson(res, 403, { message: `vmid ${vmid} is reserved` })
       return
     }
     if (!vmidAllowed(key.vmidRanges, vmid)) {
@@ -382,6 +458,66 @@ export function createDataPlaneHandler(deps: DataPlaneDeps): RequestListener {
     }
   }
 
+  /**
+   * Native endpoint: clone a group of templates as one isolated pod (linked
+   * clones sharing a freshly leased VLAN), returned already configured. The
+   * proxy owns id and VLAN selection; see LinkedCloneService.
+   */
+  async function handleLinkedClone(
+    req: IncomingMessage,
+    res: ServerResponse,
+    key: ApiKeyRecord,
+  ): Promise<void> {
+    const started = Date.now()
+    let body: LinkedCloneRequest
+    try {
+      const raw = await readBody(req, MAX_HEAVY_BODY)
+      body = JSON.parse(raw.toString()) as LinkedCloneRequest
+    } catch {
+      sendJson(res, 400, { message: 'expected a JSON body: {node, clones:[{template}], vlan?}' })
+      return
+    }
+    const abort = new AbortController()
+    res.on('close', () => {
+      if (!res.writableEnded) abort.abort()
+    })
+    try {
+      const result = await linkedClone.run(key, body, abort.signal)
+      sendJson(res, 200, result)
+      ops.record({
+        keyName: key.name,
+        method: 'POST',
+        path: '/proxy/linked-clone',
+        opClass: 'clone',
+        vmid: result.clones[0]?.vmid ?? null,
+        status: 200,
+        queueMs: null,
+        durationMs: Date.now() - started,
+        upid: null,
+        note: `linked-clone vlan=${result.vlan} n=${result.clones.length}`,
+      })
+    } catch (err) {
+      const status = err instanceof LinkedCloneError ? err.status : 502
+      const message = err instanceof Error ? err.message : String(err)
+      if (status !== 499) sendJson(res, status, { message })
+      ops.record({
+        keyName: key.name,
+        method: 'POST',
+        path: '/proxy/linked-clone',
+        opClass: 'clone',
+        vmid: null,
+        status: status === 499 ? null : status,
+        queueMs: null,
+        durationMs: Date.now() - started,
+        upid: null,
+        note: status === 499 ? 'client-gone' : 'linked-clone-error',
+      })
+      if (status >= 500 && status !== 503) {
+        log.warn('linked clone failed', { key: key.name, status, error: message })
+      }
+    }
+  }
+
   async function handlePass(
     req: IncomingMessage,
     res: ServerResponse,
@@ -422,10 +558,51 @@ export function createDataPlaneHandler(deps: DataPlaneDeps): RequestListener {
   }
 
   /**
+   * A cluster-wide LIST read, filtered to the key's own VMIDs before it reaches
+   * the app: the proxy is opaque about every VM outside the key's ranges. The
+   * response is buffered so its `data` array can be trimmed, then re-sent.
+   */
+  async function handleFilteredRead(
+    req: IncomingMessage,
+    res: ServerResponse,
+    url: URL,
+    cls: Classified,
+    key: ApiKeyRecord,
+  ): Promise<void> {
+    const method = req.method as Dispatcher.HttpMethod
+    try {
+      const headers = fwdHeaders(req, serviceAuth)
+      delete headers['accept-encoding'] // keep the JSON parseable for filtering
+      const r = await upstream.raw({ method, path: url.pathname + url.search, headers })
+      const respBuf = Buffer.from(await r.body.arrayBuffer())
+      let out = respBuf
+      if (r.statusCode < 400) {
+        try {
+          const parsed = JSON.parse(respBuf.toString()) as { data?: unknown[] }
+          if (Array.isArray(parsed.data)) {
+            parsed.data = filterListData(parsed.data, cls.listScope!, key.vmidRanges)
+            out = Buffer.from(JSON.stringify(parsed))
+          }
+        } catch {
+          // not the shape we expected: forward untouched rather than break
+        }
+      }
+      const respOut = respHeaders(r.headers)
+      respOut['content-length'] = String(out.length)
+      delete respOut['content-encoding']
+      res.writeHead(r.statusCode, respOut)
+      res.end(out)
+    } catch (err) {
+      sendJson(res, 502, { message: 'upstream unavailable' })
+      log.warn('filtered read failed', { path: url.pathname, error: String(err) })
+    }
+  }
+
+  /**
    * Ops that name a TARGET VMID in the body (move_disk / move_volume). The body
-   * must be buffered to read the target, which is then reserved-checked and
-   * scope-checked before forwarding (the path VMID is only the source). Not
-   * admission-gated: a move is not a pool clone/delete/suspend.
+   * must be buffered to read the target, which is then scope-checked before
+   * forwarding (the path VMID is only the source). Not admission-gated: a move
+   * is not a pool clone/delete/suspend.
    */
   async function handleBodyTargetPass(
     req: IncomingMessage,
@@ -456,23 +633,10 @@ export function createDataPlaneHandler(deps: DataPlaneDeps): RequestListener {
       upid: null,
     }
     const target = extractBodyVmid(body, req.headers['content-type'], cls.bodyTarget!)
-    if (target != null) {
-      if (vmidAllowed(settings.reservedRanges, target)) {
-        sendJson(res, 403, { message: `target vmid ${target} is reserved` })
-        ops.record({
-          ...base,
-          vmid: target,
-          status: 403,
-          durationMs: null,
-          note: 'reserved-target',
-        })
-        return
-      }
-      if (!vmidAllowed(key.vmidRanges, target)) {
-        sendJson(res, 403, { message: `target vmid ${target} is outside the ranges of this key` })
-        ops.record({ ...base, vmid: target, status: 403, durationMs: null, note: 'denied-target' })
-        return
-      }
+    if (target != null && !vmidAllowed(key.vmidRanges, target)) {
+      sendJson(res, 403, { message: `target vmid ${target} is outside the ranges of this key` })
+      ops.record({ ...base, vmid: target, status: 403, durationMs: null, note: 'denied-target' })
+      return
     }
 
     try {
@@ -507,7 +671,10 @@ export function createDataPlaneHandler(deps: DataPlaneDeps): RequestListener {
         return
       }
 
-      const isNative = url.pathname === '/proxy/whoami' || url.pathname === '/proxy/console-session'
+      const isNative =
+        url.pathname === '/proxy/whoami' ||
+        url.pathname === '/proxy/console-session' ||
+        url.pathname === '/proxy/linked-clone'
       if (!url.pathname.startsWith('/api2/') && !isNative) {
         sendJson(res, 404, { message: 'not found' })
         return
@@ -531,7 +698,12 @@ export function createDataPlaneHandler(deps: DataPlaneDeps): RequestListener {
             delete: current.deleteCap,
             suspend: current.suspendCap,
           },
-          features: { consoleSession: consoleBroker.enabled },
+          linkedVlanRange: current.linkedVlanRange,
+          features: {
+            consoleSession: consoleBroker.enabled,
+            linkedClone: current.linkedVlanRange != null,
+            proxyAssignsNewid: true,
+          },
         })
         return
       }
@@ -545,6 +717,15 @@ export function createDataPlaneHandler(deps: DataPlaneDeps): RequestListener {
         return
       }
 
+      if (url.pathname === '/proxy/linked-clone') {
+        if (req.method !== 'POST') {
+          sendJson(res, 405, { message: 'method not allowed' })
+          return
+        }
+        await handleLinkedClone(req, res, key)
+        return
+      }
+
       if (req.headers.upgrade) {
         sendJson(res, 501, {
           message: 'websockets are not proxied; connect to the cluster node directly',
@@ -552,36 +733,15 @@ export function createDataPlaneHandler(deps: DataPlaneDeps): RequestListener {
         return
       }
 
-      const cls = classify(req.method ?? 'GET', url.pathname)
+      const method = req.method ?? 'GET'
+      const cls = classify(method, url.pathname)
 
-      // Reserved VMIDs are off-limits to EVERY app: deny any op targeting one
-      // (path VMID or task UPID), regardless of the key's own ranges.
-      const targetVmid = cls.pathVmid ?? cls.upidVmid
-      if (targetVmid != null && vmidAllowed(settings.reservedRanges, targetVmid)) {
-        sendJson(res, 403, { message: `vmid ${targetVmid} is reserved` })
-        ops.record({
-          keyName: key.name,
-          method: req.method ?? '',
-          path: url.pathname,
-          opClass: cls.opClass,
-          vmid: targetVmid,
-          status: 403,
-          queueMs: null,
-          durationMs: null,
-          upid: null,
-          note: 'reserved',
-        })
-        return
-      }
-
-      const denied = authorize(req.method ?? 'GET', cls, (vmid) =>
-        vmidAllowed(key.vmidRanges, vmid),
-      )
+      const denied = authorize(method, cls, (vmid) => vmidAllowed(key.vmidRanges, vmid))
       if (denied) {
         sendJson(res, 403, { message: denied })
         ops.record({
           keyName: key.name,
-          method: req.method ?? '',
+          method,
           path: url.pathname,
           opClass: cls.opClass,
           vmid: cls.pathVmid ?? cls.upidVmid,
@@ -594,7 +754,33 @@ export function createDataPlaneHandler(deps: DataPlaneDeps): RequestListener {
         return
       }
 
-      if (cls.opClass) {
+      // Templates are read-only through the proxy and never deleted.
+      const templateDenied = await templateGuard(method, cls)
+      if (templateDenied) {
+        if (templateDenied === '__unavailable__') {
+          res.setHeader('retry-after', '5')
+          sendJson(res, 503, { message: 'cannot verify the target right now, retry shortly' })
+        } else {
+          sendJson(res, 403, { message: templateDenied })
+          ops.record({
+            keyName: key.name,
+            method,
+            path: url.pathname,
+            opClass: cls.opClass,
+            vmid: cls.pathVmid,
+            status: 403,
+            queueMs: null,
+            durationMs: null,
+            upid: null,
+            note: 'template-protected',
+          })
+        }
+        return
+      }
+
+      if (cls.listScope && READ_METHODS.has(method)) {
+        await handleFilteredRead(req, res, url, cls, key)
+      } else if (cls.opClass) {
         // Fail-closed: having lost the cluster lock we are no longer the
         // admission authority, so a contended op must not be forwarded blind
         // (a rival proxy now owns coordination). Reads still pass through
@@ -604,7 +790,7 @@ export function createDataPlaneHandler(deps: DataPlaneDeps): RequestListener {
           sendJson(res, 503, { message: 'proxy is not the current cluster authority' })
           ops.record({
             keyName: key.name,
-            method: req.method ?? '',
+            method,
             path: url.pathname,
             opClass: cls.opClass,
             vmid: cls.pathVmid ?? cls.upidVmid,
@@ -625,4 +811,37 @@ export function createDataPlaneHandler(deps: DataPlaneDeps): RequestListener {
       sendJson(res, 500, { message: 'internal proxy error' })
     })
   }
+}
+
+/** Trim a Proxmox list `data` array to the entries the key may see. */
+function filterListData(
+  data: unknown[],
+  scope: NonNullable<Classified['listScope']>,
+  ranges: [number, number][],
+): unknown[] {
+  if (scope === 'resources') {
+    // Keep infra rows (no vmid: nodes, storage, pools) and in-range guests only.
+    return data.filter((row) => {
+      const vmid = (row as { vmid?: unknown }).vmid
+      if (typeof vmid !== 'number') return true
+      return vmidAllowed(ranges, vmid)
+    })
+  }
+  if (scope === 'guests') {
+    return data.filter((row) => {
+      const vmid = (row as { vmid?: unknown }).vmid
+      return typeof vmid === 'number' && vmidAllowed(ranges, vmid)
+    })
+  }
+  // tasks: keep only tasks that target one of the key's VMIDs.
+  return data.filter((row) => {
+    const t = row as { upid?: unknown; id?: unknown }
+    let vmid: number | null = null
+    if (typeof t.upid === 'string') vmid = vmidFromUpid(t.upid)
+    if (vmid == null && t.id != null) {
+      const n = Number.parseInt(String(t.id), 10)
+      vmid = Number.isInteger(n) ? n : null
+    }
+    return vmid != null && vmidAllowed(ranges, vmid)
+  })
 }

@@ -29,6 +29,16 @@ test('qemu and lxc share heavy classification and body targets', () => {
   )
 })
 
+test('classifies cluster-wide list reads for opacity filtering', () => {
+  assert.equal(classify('GET', '/api2/json/cluster/resources').listScope, 'resources')
+  assert.equal(classify('GET', '/api2/json/nodes/n1/qemu').listScope, 'guests')
+  assert.equal(classify('GET', '/api2/json/nodes/n1/lxc').listScope, 'guests')
+  assert.equal(classify('GET', '/api2/json/nodes/n1/tasks').listScope, 'tasks')
+  // A specific guest or task is not a list.
+  assert.equal(classify('GET', '/api2/json/nodes/n1/qemu/1100100/status/current').listScope, null)
+  assert.equal(classify('GET', '/api2/json/version').listScope, null)
+})
+
 test('pass operations carry no class', () => {
   assert.equal(classify('POST', '/api2/json/nodes/n1/qemu/1100100/status/start').opClass, null)
   assert.equal(classify('GET', '/api2/json/nodes/n1/qemu/1100100/status/current').opClass, null)

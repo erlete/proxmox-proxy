@@ -27,11 +27,19 @@ export interface Settings {
    */
   appPriority: Record<string, number>
   /**
-   * VMID ranges the proxy must NEVER touch, for ANY app: every operation that
-   * targets a VMID inside these ranges is denied regardless of key scope. A
+   * VMID ranges no app key may include. Enforced as configuration, not per
+   * operation: a key whose ranges would overlap one of these is rejected, so an
+   * app can never even name a reserved VMID (its own scope keeps it out). A
    * single VMID is a [n, n] range. Surfaced in the inventory.
    */
   reserved: VmidRange[]
+  /**
+   * 802.1q VLAN tag range [start, end] (inclusive) the proxy draws from when it
+   * assigns an isolated VLAN to a linked-clone group. Null disables linked
+   * cloning through the proxy. Must not collide with the platform's default
+   * per-VM tags.
+   */
+  linkedVlanRange: [number, number] | null
 }
 
 export const SETTINGS_DEFAULTS: Settings = {
@@ -47,13 +55,16 @@ export const SETTINGS_DEFAULTS: Settings = {
   publicWsUrl: '',
   appPriority: {},
   reserved: [],
+  linkedVlanRange: null,
 }
 
 const APP_NAME_RE = /^[a-z0-9][a-z0-9-]{1,62}$/
 const PRIORITY_MAX = 1000
+const VLAN_MIN = 1
+const VLAN_MAX = 4094
 
 const BOUNDS: Record<
-  keyof Omit<Settings, 'publicWsUrl' | 'appPriority' | 'reserved'>,
+  keyof Omit<Settings, 'publicWsUrl' | 'appPriority' | 'reserved' | 'linkedVlanRange'>,
   [number, number]
 > = {
   cloneCap: [0, 64],
@@ -97,6 +108,9 @@ export class SettingsStore extends EventEmitter {
       ...this.values,
       appPriority: { ...this.values.appPriority },
       reserved: this.values.reserved.map((r) => [...r] as VmidRange),
+      linkedVlanRange: this.values.linkedVlanRange
+        ? [this.values.linkedVlanRange[0], this.values.linkedVlanRange[1]]
+        : null,
     }
   }
 
@@ -120,6 +134,8 @@ export class SettingsStore extends EventEmitter {
           throw new Error('invalid reserved ranges')
         }
         next.reserved = (value as VmidRange[]).map((r) => [...r] as VmidRange)
+      } else if (key === 'linkedVlanRange') {
+        next.linkedVlanRange = validateVlanRange(value)
       } else {
         const [min, max] = BOUNDS[key]
         if (typeof value !== 'number' || !Number.isFinite(value) || value < min || value > max) {
@@ -136,12 +152,32 @@ export class SettingsStore extends EventEmitter {
   }
 
   reset(): Settings {
-    this.values = { ...SETTINGS_DEFAULTS, appPriority: {}, reserved: [] }
+    this.values = { ...SETTINGS_DEFAULTS, appPriority: {}, reserved: [], linkedVlanRange: null }
     setMeta(this.db, META_KEY, JSON.stringify(this.values))
     log.info('settings reset to defaults')
     this.emit('change', this.all)
     return this.all
   }
+}
+
+/** Validate a linked-VLAN range: null, or a [start, end] of tags 1..4094. */
+function validateVlanRange(value: unknown): [number, number] | null {
+  if (value === null) return null
+  if (
+    !Array.isArray(value) ||
+    value.length !== 2 ||
+    !Number.isInteger(value[0]) ||
+    !Number.isInteger(value[1])
+  ) {
+    throw new Error('linkedVlanRange must be null or a [start, end] pair')
+  }
+  const [start, end] = value as [number, number]
+  if (start < VLAN_MIN || end > VLAN_MAX || start > end) {
+    throw new Error(
+      `linkedVlanRange bounds must satisfy ${VLAN_MIN} <= start <= end <= ${VLAN_MAX}`,
+    )
+  }
+  return [start, end]
 }
 
 /** Validate an app-priority map: valid names, integer 0..PRIORITY_MAX; drop 0s. */

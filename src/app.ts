@@ -5,12 +5,16 @@ import { buildAdminServer } from './admin/server.js'
 import { Admission, type AdmissionOpts, type TaskFinishedEvent } from './admission/queue.js'
 import type { Config } from './config.js'
 import { getMeta, openDb, setMeta, type Db } from './db.js'
+import { IdAllocator, VlanAllocator } from './dataplane/allocator.js'
+import { VlanLeaseStore } from './dataplane/leases.js'
+import { LinkedCloneService, startVlanReaper } from './dataplane/linkedclone.js'
 import { createDataPlaneHandler } from './dataplane/server.js'
 import { KeyStore } from './keys/store.js'
 import { log } from './log.js'
 import { OpsLog } from './ops.js'
 import { hashPassword } from './password.js'
 import { SettingsStore, type Settings } from './settings.js'
+import { ClusterSnapshot } from './upstream/cluster.js'
 import { Upstream } from './upstream/client.js'
 import { ConsoleBroker } from './upstream/console.js'
 import { HealthMonitor } from './upstream/health.js'
@@ -120,6 +124,24 @@ export async function createApp(config: Config, onFatal?: () => void): Promise<A
 
   const consoleBroker = new ConsoleBroker(upstream, config.console)
 
+  // Shared cluster view + allocators the data plane owns: id selection, VLAN
+  // leasing and the linked-clone group operation, plus a reaper that frees a
+  // VLAN once its pod is gone.
+  const cluster = new ClusterSnapshot(upstream)
+  const leases = new VlanLeaseStore(db)
+  const ids = new IdAllocator(cluster)
+  const vlans = new VlanAllocator(leases)
+  const linkedClone = new LinkedCloneService({
+    upstream,
+    admission,
+    cluster,
+    leases,
+    ids,
+    vlans,
+    settings,
+  })
+  const stopReaper = startVlanReaper(cluster, leases)
+
   const dataHandler = createDataPlaneHandler({
     config,
     keys,
@@ -128,6 +150,9 @@ export async function createApp(config: Config, onFatal?: () => void): Promise<A
     admission,
     health,
     console: consoleBroker,
+    cluster,
+    ids,
+    linkedClone,
     singletonHeld,
     ops,
   })
@@ -140,6 +165,8 @@ export async function createApp(config: Config, onFatal?: () => void): Promise<A
     health,
     ops,
     upstream,
+    cluster,
+    leases,
     singletonHeld,
   })
   await admin.ready()
@@ -169,6 +196,7 @@ export async function createApp(config: Config, onFatal?: () => void): Promise<A
   const close = async (): Promise<void> => {
     if (closed) return
     closed = true
+    stopReaper()
     admission.stop()
     health.stop()
     // Release the cluster lock FIRST: server close can be slowed down by

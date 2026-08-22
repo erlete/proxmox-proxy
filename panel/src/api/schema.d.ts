@@ -645,6 +645,10 @@ export interface paths {
                                     number,
                                     number
                                 ][];
+                                linkedVlanRange: null | [
+                                    number,
+                                    number
+                                ];
                             };
                             defaults: {
                                 cloneCap: number;
@@ -664,6 +668,10 @@ export interface paths {
                                     number,
                                     number
                                 ][];
+                                linkedVlanRange: null | [
+                                    number,
+                                    number
+                                ];
                             };
                         };
                     };
@@ -697,6 +705,10 @@ export interface paths {
                             number,
                             number
                         ][];
+                        linkedVlanRange?: null | [
+                            number,
+                            number
+                        ];
                     };
                 };
             };
@@ -726,6 +738,10 @@ export interface paths {
                                     number,
                                     number
                                 ][];
+                                linkedVlanRange: null | [
+                                    number,
+                                    number
+                                ];
                             };
                             defaults: {
                                 cloneCap: number;
@@ -745,6 +761,10 @@ export interface paths {
                                     number,
                                     number
                                 ][];
+                                linkedVlanRange: null | [
+                                    number,
+                                    number
+                                ];
                             };
                         };
                     };
@@ -812,6 +832,10 @@ export interface paths {
                                     number,
                                     number
                                 ][];
+                                linkedVlanRange: null | [
+                                    number,
+                                    number
+                                ];
                             };
                             defaults: {
                                 cloneCap: number;
@@ -831,6 +855,10 @@ export interface paths {
                                     number,
                                     number
                                 ][];
+                                linkedVlanRange: null | [
+                                    number,
+                                    number
+                                ];
                             };
                         };
                     };
@@ -968,6 +996,49 @@ export interface paths {
                                 reserved: boolean;
                             }[];
                             upstreamOk: boolean;
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/leases": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            leases: {
+                                vlan: number;
+                                vmids: number[];
+                                keyName: string;
+                                node: string;
+                                createdAt: number;
+                            }[];
                         };
                     };
                 };

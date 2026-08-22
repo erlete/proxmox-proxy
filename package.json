@@ -12,7 +12,7 @@
     "build": "tsc -p tsconfig.json",
     "start": "node dist/index.js",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "tsx --test test/classify.test.ts test/keys.test.ts test/session.test.ts test/admission.test.ts test/failclosed.test.ts test/e2e.test.ts",
+    "test": "tsx --test test/classify.test.ts test/keys.test.ts test/session.test.ts test/admission.test.ts test/allocator.test.ts test/failclosed.test.ts test/e2e.test.ts",
     "openapi": "tsx scripts/emit-openapi.ts && openapi-typescript panel/openapi.json -o panel/src/api/schema.d.ts",
     "hash-password": "tsx scripts/hash-password.ts"
   },

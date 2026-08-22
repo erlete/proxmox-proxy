@@ -21,6 +21,11 @@ let appToken = ''
 const stoppedTasks = new Set<string>()
 let cloneCount = 0
 let poolComment: string | null = null
+// When set, every task reports finished on its first poll: lets the linked-clone
+// orchestrator (which waits for each clone task) run without hand-stopping UPIDs.
+let autoCompleteTasks = false
+const putConfigs: { vmid: number; net0: string }[] = []
+const deletedVms = new Set<number>()
 
 function fakeUpstream(): Server {
   return createServer((req, res) => {
@@ -39,11 +44,40 @@ function fakeUpstream(): Server {
       // Backstop poll: no out-of-band cluster load in this fixture.
       if (p === '/api2/json/cluster/tasks') return json(200, [])
 
-      // Cluster inventory: one VM inside app-a's range, one outside it.
+      // Cluster inventory: a template and a VM inside app-a's range, one outside.
       if (p === '/api2/json/cluster/resources') {
+        return json(
+          200,
+          [
+            {
+              vmid: 1100001,
+              node: 'n1',
+              name: 'tmpl-a',
+              status: 'stopped',
+              type: 'qemu',
+              template: 1,
+            },
+            { vmid: 1100100, node: 'n1', name: 'app-vm', status: 'running', type: 'qemu' },
+            { vmid: 4242, node: 'n1', name: 'stray-vm', status: 'stopped', type: 'qemu' },
+          ].filter((vm) => !deletedVms.has(vm.vmid)),
+        )
+      }
+
+      // Guest list on the node (filtered to the key's range by the proxy).
+      if (p === '/api2/json/nodes/n1/qemu' && req.method === 'GET') {
         return json(200, [
-          { vmid: 1100100, node: 'n1', name: 'app-vm', status: 'running', type: 'qemu' },
-          { vmid: 4242, node: 'n1', name: 'stray-vm', status: 'stopped', type: 'qemu' },
+          { vmid: 1100001, name: 'tmpl-a', status: 'stopped', template: 1 },
+          { vmid: 1100100, name: 'app-vm', status: 'running' },
+          { vmid: 4242, name: 'stray-vm', status: 'stopped' },
+        ])
+      }
+
+      // Task list on the node (filtered to the key's range by the proxy).
+      if (p === '/api2/json/nodes/n1/tasks' && req.method === 'GET') {
+        return json(200, [
+          { upid: 'UPID:n1:1:0:0:qmclone:1100100:root@pam:', id: '1100100', type: 'qmclone' },
+          { upid: 'UPID:n1:2:0:0:qmclone:4242:root@pam:', id: '4242', type: 'qmclone' },
+          { upid: 'UPID:n1:3:0:0:aptupdate::root@pam:', id: '', type: 'aptupdate' },
         ])
       }
 
@@ -89,16 +123,38 @@ function fakeUpstream(): Server {
       const clone = /^\/api2\/json\/nodes\/n1\/qemu\/(\d+)\/clone$/.exec(p)
       if (clone && req.method === 'POST') {
         cloneCount += 1
-        const upid = `UPID:n1:0000${cloneCount}:0:0:qmclone:${clone[1]}:root@pam:`
+        // A real qmclone UPID carries the NEW vmid, which is how the app learns
+        // the id the proxy assigned.
+        const newid = new URLSearchParams(Buffer.concat(chunks).toString()).get('newid') ?? clone[1]
+        const upid = `UPID:n1:0000${cloneCount}:0:0:qmclone:${newid}:root@pam:`
         return json(200, upid)
+      }
+
+      // VM config read/write (linked-clone reads net0, then retags it).
+      const cfg = /^\/api2\/json\/nodes\/n1\/qemu\/(\d+)\/config$/.exec(p)
+      if (cfg && req.method === 'GET') {
+        return json(200, { net0: 'virtio=AA:BB:CC:DD:EE:FF,bridge=vmbr0,tag=1' })
+      }
+      if (cfg && req.method === 'PUT') {
+        const net0 = new URLSearchParams(Buffer.concat(chunks).toString()).get('net0') ?? ''
+        putConfigs.push({ vmid: Number(cfg[1]), net0 })
+        return json(200, null)
+      }
+
+      // VM delete (template guard blocks templates before this is ever reached).
+      const delVm = /^\/api2\/json\/nodes\/n1\/qemu\/(\d+)$/.exec(p)
+      if (delVm && req.method === 'DELETE') {
+        deletedVms.add(Number(delVm[1]))
+        return json(200, `UPID:n1:00${cloneCount}:0:0:qmdestroy:${delVm[1]}:root@pam:`)
       }
 
       const task = /^\/api2\/json\/nodes\/n1\/tasks\/([^/]+)\/status$/.exec(p)
       if (task) {
         const upid = decodeURIComponent(task[1])
+        const stopped = stoppedTasks.has(upid) || autoCompleteTasks
         return json(200, {
-          status: stoppedTasks.has(upid) ? 'stopped' : 'running',
-          exitstatus: stoppedTasks.has(upid) ? 'OK' : undefined,
+          status: stopped ? 'stopped' : 'running',
+          exitstatus: stopped ? 'OK' : undefined,
         })
       }
 
@@ -404,9 +460,10 @@ test('per-app inventory groups cluster VMs by key ranges', async () => {
   }
   assert.equal(body.upstreamOk, true)
   const appA = body.apps.find((a) => a.name === 'app-a')
+  // The template and the live VM both fall in app-a's range, sorted by vmid.
   assert.deepEqual(
     appA?.vms.map((v) => v.vmid),
-    [1100100],
+    [1100001, 1100100],
   )
   // The out-of-range VM belongs to no key: it surfaces as unassigned residue.
   assert.deepEqual(
@@ -435,46 +492,42 @@ test('red button stops a running task through the proxy', async () => {
   assert.equal(bad.status, 400)
 })
 
-test('reserved VMIDs are denied for every app, beating key scope', async () => {
-  // Reserve a VMID that is INSIDE app-a's own range.
-  const set = await fetch(`${adminUrl}/api/settings`, {
+test('reserved ranges are enforced as configuration, not per-operation', async () => {
+  // A reserved range that overlaps an existing key's ranges is rejected: the
+  // guard is config-level (an app range may never include a reserved VMID).
+  const clash = await fetch(`${adminUrl}/api/settings`, {
     method: 'PUT',
     headers: { 'content-type': 'application/json', cookie },
     body: JSON.stringify({ reserved: [[1100200, 1100200]] }),
   })
+  assert.equal(clash.status, 400)
+
+  // A reserved range disjoint from every key is accepted.
+  const set = await fetch(`${adminUrl}/api/settings`, {
+    method: 'PUT',
+    headers: { 'content-type': 'application/json', cookie },
+    body: JSON.stringify({ reserved: [[1200000, 1200099]] }),
+  })
   assert.equal(set.status, 200)
 
-  // A read the key would otherwise be allowed is now 403 (reserved wins).
-  const read = await fetch(`${dataUrl}/api2/json/nodes/n1/qemu/1100200/status/current`, {
-    headers: { authorization: appToken },
-  })
-  assert.equal(read.status, 403)
-
-  // A clone whose newid is reserved is denied before admission.
-  const clone = await fetch(`${dataUrl}/api2/json/nodes/n1/qemu/1100050/clone`, {
+  // A new key whose ranges overlap the reserved range is rejected.
+  const clashKey = await fetch(`${adminUrl}/api/keys`, {
     method: 'POST',
-    headers: { authorization: appToken, 'content-type': 'application/x-www-form-urlencoded' },
-    body: 'newid=1100200',
+    headers: { 'content-type': 'application/json', cookie },
+    body: JSON.stringify({ name: 'app-reserved-clash', vmidRanges: [[1200050, 1200150]] }),
   })
-  assert.equal(clone.status, 403)
+  assert.equal(clashKey.status, 400)
 
-  // An LXC clone whose newid is reserved is denied (body target, not path).
-  const lxcClone = await fetch(`${dataUrl}/api2/json/nodes/n1/lxc/1100050/clone`, {
+  // A key disjoint from the reserved range is accepted.
+  const okKey = await fetch(`${adminUrl}/api/keys`, {
     method: 'POST',
-    headers: { authorization: appToken, 'content-type': 'application/x-www-form-urlencoded' },
-    body: 'newid=1100200',
+    headers: { 'content-type': 'application/json', cookie },
+    body: JSON.stringify({ name: 'app-reserved-ok', vmidRanges: [[1300000, 1300099]] }),
   })
-  assert.equal(lxcClone.status, 403)
+  assert.equal(okKey.status, 201)
 
-  // A disk move onto a reserved target is denied (target-vmid in the body).
-  const move = await fetch(`${dataUrl}/api2/json/nodes/n1/qemu/1100100/move_disk`, {
-    method: 'POST',
-    headers: { authorization: appToken, 'content-type': 'application/x-www-form-urlencoded' },
-    body: 'disk=scsi0&storage=local&target-vmid=1100200',
-  })
-  assert.equal(move.status, 403)
-
-  // A non-reserved VMID in range still works.
+  // Because reserved can never overlap a key, an app operation on its own
+  // in-range VMID is unaffected by reserved config.
   const ok = await fetch(`${dataUrl}/api2/json/nodes/n1/qemu/1100100/status/current`, {
     headers: { authorization: appToken },
   })
@@ -521,6 +574,138 @@ test('purge removes a revoked key record; active keys are protected', async () =
     headers: { cookie },
   })
   assert.equal(missing.status, 404)
+})
+
+test('opacity: cluster list reads are filtered to the key ranges', async () => {
+  const resources = await fetch(`${dataUrl}/api2/json/cluster/resources?type=vm`, {
+    headers: { authorization: appToken },
+  })
+  assert.equal(resources.status, 200)
+  const rBody = (await resources.json()) as { data: { vmid: number }[] }
+  assert.deepEqual(
+    rBody.data.map((v) => v.vmid).sort((a, b) => a - b),
+    [1100001, 1100100],
+  )
+
+  const guests = await fetch(`${dataUrl}/api2/json/nodes/n1/qemu`, {
+    headers: { authorization: appToken },
+  })
+  const gBody = (await guests.json()) as { data: { vmid: number }[] }
+  assert.deepEqual(
+    gBody.data.map((v) => v.vmid).sort((a, b) => a - b),
+    [1100001, 1100100],
+  )
+
+  const tasks = await fetch(`${dataUrl}/api2/json/nodes/n1/tasks`, {
+    headers: { authorization: appToken },
+  })
+  const tBody = (await tasks.json()) as { data: { id: string }[] }
+  // Only the task targeting an in-range VMID survives; the foreign and the
+  // vmid-less cluster task are dropped.
+  assert.deepEqual(
+    tBody.data.map((t) => t.id),
+    ['1100100'],
+  )
+})
+
+test('the proxy assigns the newid when the app omits it', async () => {
+  const res = await fetch(`${dataUrl}/api2/json/nodes/n1/qemu/1100001/clone`, {
+    method: 'POST',
+    headers: { authorization: appToken, 'content-type': 'application/x-www-form-urlencoded' },
+    body: 'name=auto', // no newid: the proxy must pick one
+  })
+  assert.equal(res.status, 200)
+  const upid = ((await res.json()) as { data: string }).data
+  const assigned = Number(upid.split(':')[6])
+  // A free id inside the key range, avoiding the template and the live VM.
+  assert.ok(assigned >= 1100000 && assigned <= 1100999, `assigned ${assigned} out of range`)
+  assert.ok(assigned !== 1100001 && assigned !== 1100100)
+
+  // Free the held clone slot for later tests.
+  stoppedTasks.add(upid)
+  await waitFor(async () => {
+    const snap = await queuesSnapshot()
+    return snap.classes.find((c) => c.name === 'clone')?.running.length === 0
+  })
+})
+
+test('templates are read-only through the proxy; cloning is the only write', async () => {
+  const del = await fetch(`${dataUrl}/api2/json/nodes/n1/qemu/1100001`, {
+    method: 'DELETE',
+    headers: { authorization: appToken },
+  })
+  assert.equal(del.status, 403)
+
+  const write = await fetch(`${dataUrl}/api2/json/nodes/n1/qemu/1100001/config`, {
+    method: 'PUT',
+    headers: { authorization: appToken, 'content-type': 'application/x-www-form-urlencoded' },
+    body: 'description=hacked',
+  })
+  assert.equal(write.status, 403)
+
+  // Reading a template is fine (it is discoverable, just not mutable).
+  const read = await fetch(`${dataUrl}/api2/json/nodes/n1/qemu/1100001/config`, {
+    headers: { authorization: appToken },
+  })
+  assert.equal(read.status, 200)
+})
+
+test('linked clone: a group is cloned onto one leased VLAN, already configured', async () => {
+  const range = await fetch(`${adminUrl}/api/settings`, {
+    method: 'PUT',
+    headers: { 'content-type': 'application/json', cookie },
+    body: JSON.stringify({ linkedVlanRange: [1000, 1099] }),
+  })
+  assert.equal(range.status, 200)
+
+  autoCompleteTasks = true
+  putConfigs.length = 0
+  try {
+    // A non-template source is rejected before anything is created.
+    const bad = await fetch(`${dataUrl}/proxy/linked-clone`, {
+      method: 'POST',
+      headers: { authorization: appToken, 'content-type': 'application/json' },
+      body: JSON.stringify({ node: 'n1', clones: [{ template: 1100100 }] }),
+    })
+    assert.equal(bad.status, 400)
+
+    const res = await fetch(`${dataUrl}/proxy/linked-clone`, {
+      method: 'POST',
+      headers: { authorization: appToken, 'content-type': 'application/json' },
+      body: JSON.stringify({ node: 'n1', clones: [{ template: 1100001 }, { template: 1100001 }] }),
+    })
+    assert.equal(res.status, 200)
+    const body = (await res.json()) as {
+      vlan: number
+      clones: { template: number; vmid: number }[]
+    }
+    assert.ok(body.vlan >= 1000 && body.vlan <= 1099)
+    assert.equal(body.clones.length, 2)
+    const vmids = body.clones.map((c) => c.vmid)
+    assert.equal(new Set(vmids).size, 2) // distinct
+    assert.ok(vmids.every((v) => v >= 1100000 && v <= 1100999))
+
+    // Both clones were retagged onto the leased VLAN.
+    assert.equal(putConfigs.length, 2)
+    assert.ok(putConfigs.every((c) => c.net0.includes(`tag=${body.vlan}`)))
+
+    // The VLAN is now leased and visible to the operator.
+    const leases = await fetch(`${adminUrl}/api/leases`, { headers: { cookie } })
+    const lBody = (await leases.json()) as { leases: { vlan: number; vmids: number[] }[] }
+    const lease = lBody.leases.find((l) => l.vlan === body.vlan)
+    assert.ok(lease, 'lease recorded')
+    assert.deepEqual(
+      [...lease!.vmids].sort((a, b) => a - b),
+      [...vmids].sort((a, b) => a - b),
+    )
+  } finally {
+    autoCompleteTasks = false
+    await fetch(`${adminUrl}/api/settings`, {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json', cookie },
+      body: JSON.stringify({ linkedVlanRange: null }),
+    })
+  }
 })
 
 // Must run last: it shuts the app down. Regression test for the deploy bug

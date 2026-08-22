@@ -147,8 +147,16 @@ export const SettingsSchema = Type.Object({
   publicWsUrl: Type.String({ maxLength: 200 }),
   /** App name -> admission priority value (higher wins); 0 omitted. */
   appPriority: Type.Record(Type.String(), Type.Integer()),
-  /** VMID ranges the proxy must never touch, for any app. */
+  /** VMID ranges no app key may include (enforced when keys are created). */
   reserved: Type.Array(VmidRangeSchema, { maxItems: 128 }),
+  /** VLAN tag range the proxy leases from for linked-clone groups; null = off. */
+  linkedVlanRange: Type.Union([
+    Type.Null(),
+    Type.Tuple([
+      Type.Integer({ minimum: 1, maximum: 4094 }),
+      Type.Integer({ minimum: 1, maximum: 4094 }),
+    ]),
+  ]),
 })
 
 export const SettingsPatch = Type.Partial(SettingsSchema)
@@ -186,6 +194,16 @@ export const InventoryAppSchema = Type.Object({
   vmidRanges: Type.Array(VmidRangeSchema),
   vms: Type.Array(InventoryVmSchema),
 })
+
+export const VlanLeaseSchema = Type.Object({
+  vlan: Type.Integer(),
+  vmids: Type.Array(Type.Integer()),
+  keyName: Type.String(),
+  node: Type.String(),
+  createdAt: Type.Integer(),
+})
+
+export const LeasesReply = Type.Object({ leases: Type.Array(VlanLeaseSchema) })
 
 export const InventoryReply = Type.Object({
   /** Live VMs in a reserved range: off-limits to every app, shown on top. */

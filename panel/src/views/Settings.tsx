@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactElement } from 'react'
-import { Plus, ShieldBan, X } from 'lucide-react'
+import { Network, Plus, ShieldBan, X } from 'lucide-react'
 import { api } from '../api'
 import type { paths } from '../api/schema'
 
@@ -8,7 +8,7 @@ type Values = SettingsBody['settings']
 type Range = [number, number]
 
 interface FieldDef {
-  key: Exclude<keyof Values, 'appPriority' | 'reserved'>
+  key: Exclude<keyof Values, 'appPriority' | 'reserved' | 'linkedVlanRange'>
   label: string
   hint: string
 }
@@ -57,8 +57,77 @@ function parseRange(text: string): Range | null {
 }
 
 /**
- * Reserved VMIDs: ranges the proxy must never touch, for any app. Every op that
- * targets a VMID in these ranges is denied regardless of key scope.
+ * Linked-VLAN range: the tag pool the proxy leases from when it clones a linked
+ * group onto one isolated VLAN. Empty disables linked cloning.
+ */
+function LinkedVlanEditor({
+  value,
+  onChange,
+}: {
+  value: Range | null
+  onChange: (next: Range | null) => void
+}): ReactElement {
+  const [text, setText] = useState(value ? `${value[0]}-${value[1]}` : '')
+  const [err, setErr] = useState<string | null>(null)
+  useEffect(() => {
+    setText(value ? `${value[0]}-${value[1]}` : '')
+  }, [value])
+  const apply = (): void => {
+    const t = text.trim()
+    if (t === '') {
+      setErr(null)
+      onChange(null)
+      return
+    }
+    const m = /^(\d+)\s*-\s*(\d+)$/.exec(t)
+    if (!m) {
+      setErr('Enter a range like 1000-1099, or clear to disable')
+      return
+    }
+    const a = Number.parseInt(m[1], 10)
+    const b = Number.parseInt(m[2], 10)
+    if (a < 1 || b > 4094 || a > b) {
+      setErr('Tags must satisfy 1 <= start <= end <= 4094')
+      return
+    }
+    setErr(null)
+    onChange([a, b])
+  }
+  return (
+    <section className="card settings-group">
+      <div className="card-title">
+        <Network size={13} className="muted" /> Linked-clone VLAN range
+      </div>
+      <p className="hint settings-note">
+        Tag pool the proxy leases from to isolate each linked-clone group on its own VLAN. Must not
+        collide with the platform&apos;s default per-VM tags. Empty disables linked cloning through
+        the proxy. Applied hot on save.
+      </p>
+      <div className="priority-add">
+        <input
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          placeholder="1000-1099 (empty = disabled)"
+          inputMode="numeric"
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') apply()
+          }}
+        />
+        <button className="btn small icon-btn" onClick={apply}>
+          <Plus size={13} /> Set
+        </button>
+      </div>
+      <span className="hint">
+        Current: {value ? `${value[0]} - ${value[1]}` : 'disabled'}. Valid tags 1 to 4094.
+      </span>
+      {err && <div className="error">{err}</div>}
+    </section>
+  )
+}
+
+/**
+ * Reserved VMIDs: ranges no app key may include. Enforced as configuration (a
+ * key whose ranges would overlap one is rejected), not per operation.
  */
 function ReservedEditor({
   ranges,
@@ -85,8 +154,8 @@ function ReservedEditor({
         <ShieldBan size={13} className="muted" /> Reserved VMIDs
       </div>
       <p className="hint settings-note">
-        Off-limits to every app: any operation targeting a VMID in these ranges is denied, whatever
-        the key scope. Shown in the inventory. Applied hot on save.
+        Ranges no app key may include: a key whose ranges would overlap one of these is rejected, so
+        an app can never even name a reserved VMID. Shown in the inventory. Applied hot on save.
       </p>
       {ranges.length === 0 ? (
         <div className="empty small">nothing reserved</div>
@@ -163,6 +232,11 @@ export function Settings(): ReactElement {
     setDirty((d) => ({ ...d, reserved: next }))
   }
 
+  const setLinkedVlan = (next: Range | null): void => {
+    setSaved(false)
+    setDirty((d) => ({ ...d, linkedVlanRange: next }))
+  }
+
   const save = async (): Promise<void> => {
     setError(null)
     const {
@@ -221,6 +295,7 @@ export function Settings(): ReactElement {
           </div>
         </section>
       ))}
+      <LinkedVlanEditor value={current.linkedVlanRange as Range | null} onChange={setLinkedVlan} />
       <ReservedEditor ranges={current.reserved as Range[]} onChange={setReserved} />
       {error && <div className="error">{error}</div>}
       <div className="toolbar">

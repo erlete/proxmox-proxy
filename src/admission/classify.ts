@@ -13,6 +13,14 @@ export interface Classified {
    * and enforce reserved + key scope on it: the path VMID is only the source.
    */
   bodyTarget: 'newid' | 'target-vmid' | null
+  /**
+   * A cluster-wide LIST read whose response must be filtered to the key's own
+   * VMIDs (opacity): the app must never see a VM outside its ranges.
+   *  - 'resources': /cluster/resources (drop foreign guests, keep infra rows)
+   *  - 'guests':    /nodes/{node}/{qemu,lxc} (drop foreign guests)
+   *  - 'tasks':     /nodes/{node}/tasks (drop tasks for foreign VMIDs)
+   */
+  listScope: 'resources' | 'guests' | 'tasks' | null
   /** Non-null = deny with this reason. */
   blocked: string | null
 }
@@ -29,6 +37,10 @@ const GENERIC_VMID_RE = /\/(?:qemu|lxc)\/(\d+)(?:\/|$)/
 const NODE_RE = /^\/api2\/(?:json|extjs)\/nodes\/([^/]+)/
 const ACCESS_RE = /^\/api2\/[^/]+\/access(?:\/|$)/
 const TASK_RE = /^\/api2\/(?:json|extjs)\/nodes\/[^/]+\/tasks\/([^/]+)/
+// Cluster-wide LIST reads: filtered to the key's own VMIDs before returning.
+const CLUSTER_RESOURCES_RE = /^\/api2\/(?:json|extjs)\/cluster\/resources\/?$/
+const GUEST_LIST_RE = /^\/api2\/(?:json|extjs)\/nodes\/[^/]+\/(?:qemu|lxc)\/?$/
+const TASK_LIST_RE = /^\/api2\/(?:json|extjs)\/nodes\/[^/]+\/tasks\/?$/
 
 /** UPID:node:pid:pstart:starttime:type:id:user@realm: -> id (vmid for qemu tasks). */
 export function vmidFromUpid(upid: string): number | null {
@@ -45,6 +57,7 @@ export function classify(method: string, pathname: string): Classified {
     pathVmid: null,
     upidVmid: null,
     bodyTarget: null,
+    listScope: null,
     blocked: null,
   }
 
@@ -61,6 +74,10 @@ export function classify(method: string, pathname: string): Classified {
 
   const task = TASK_RE.exec(pathname)
   if (task) out.upidVmid = vmidFromUpid(task[1])
+
+  if (CLUSTER_RESOURCES_RE.test(pathname)) out.listScope = 'resources'
+  else if (GUEST_LIST_RE.test(pathname)) out.listScope = 'guests'
+  else if (TASK_LIST_RE.test(pathname)) out.listScope = 'tasks'
 
   if (method === 'POST') {
     if (CLONE_RE.test(pathname)) {

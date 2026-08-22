@@ -1019,7 +1019,8 @@
                         "sessionTtlHours",
                         "publicWsUrl",
                         "appPriority",
-                        "reserved"
+                        "reserved",
+                        "linkedVlanRange"
                       ],
                       "properties": {
                         "cloneCap": {
@@ -1096,6 +1097,31 @@
                             "minItems": 2,
                             "maxItems": 2
                           }
+                        },
+                        "linkedVlanRange": {
+                          "anyOf": [
+                            {
+                              "type": "null"
+                            },
+                            {
+                              "type": "array",
+                              "items": [
+                                {
+                                  "minimum": 1,
+                                  "maximum": 4094,
+                                  "type": "integer"
+                                },
+                                {
+                                  "minimum": 1,
+                                  "maximum": 4094,
+                                  "type": "integer"
+                                }
+                              ],
+                              "additionalItems": false,
+                              "minItems": 2,
+                              "maxItems": 2
+                            }
+                          ]
                         }
                       }
                     },
@@ -1113,7 +1139,8 @@
                         "sessionTtlHours",
                         "publicWsUrl",
                         "appPriority",
-                        "reserved"
+                        "reserved",
+                        "linkedVlanRange"
                       ],
                       "properties": {
                         "cloneCap": {
@@ -1190,6 +1217,31 @@
                             "minItems": 2,
                             "maxItems": 2
                           }
+                        },
+                        "linkedVlanRange": {
+                          "anyOf": [
+                            {
+                              "type": "null"
+                            },
+                            {
+                              "type": "array",
+                              "items": [
+                                {
+                                  "minimum": 1,
+                                  "maximum": 4094,
+                                  "type": "integer"
+                                },
+                                {
+                                  "minimum": 1,
+                                  "maximum": 4094,
+                                  "type": "integer"
+                                }
+                              ],
+                              "additionalItems": false,
+                              "minItems": 2,
+                              "maxItems": 2
+                            }
+                          ]
                         }
                       }
                     }
@@ -1282,6 +1334,31 @@
                       "minItems": 2,
                       "maxItems": 2
                     }
+                  },
+                  "linkedVlanRange": {
+                    "anyOf": [
+                      {
+                        "type": "null"
+                      },
+                      {
+                        "type": "array",
+                        "items": [
+                          {
+                            "minimum": 1,
+                            "maximum": 4094,
+                            "type": "integer"
+                          },
+                          {
+                            "minimum": 1,
+                            "maximum": 4094,
+                            "type": "integer"
+                          }
+                        ],
+                        "additionalItems": false,
+                        "minItems": 2,
+                        "maxItems": 2
+                      }
+                    ]
                   }
                 }
               }
@@ -1314,7 +1391,8 @@
                         "sessionTtlHours",
                         "publicWsUrl",
                         "appPriority",
-                        "reserved"
+                        "reserved",
+                        "linkedVlanRange"
                       ],
                       "properties": {
                         "cloneCap": {
@@ -1391,6 +1469,31 @@
                             "minItems": 2,
                             "maxItems": 2
                           }
+                        },
+                        "linkedVlanRange": {
+                          "anyOf": [
+                            {
+                              "type": "null"
+                            },
+                            {
+                              "type": "array",
+                              "items": [
+                                {
+                                  "minimum": 1,
+                                  "maximum": 4094,
+                                  "type": "integer"
+                                },
+                                {
+                                  "minimum": 1,
+                                  "maximum": 4094,
+                                  "type": "integer"
+                                }
+                              ],
+                              "additionalItems": false,
+                              "minItems": 2,
+                              "maxItems": 2
+                            }
+                          ]
                         }
                       }
                     },
@@ -1408,7 +1511,8 @@
                         "sessionTtlHours",
                         "publicWsUrl",
                         "appPriority",
-                        "reserved"
+                        "reserved",
+                        "linkedVlanRange"
                       ],
                       "properties": {
                         "cloneCap": {
@@ -1485,6 +1589,31 @@
                             "minItems": 2,
                             "maxItems": 2
                           }
+                        },
+                        "linkedVlanRange": {
+                          "anyOf": [
+                            {
+                              "type": "null"
+                            },
+                            {
+                              "type": "array",
+                              "items": [
+                                {
+                                  "minimum": 1,
+                                  "maximum": 4094,
+                                  "type": "integer"
+                                },
+                                {
+                                  "minimum": 1,
+                                  "maximum": 4094,
+                                  "type": "integer"
+                                }
+                              ],
+                              "additionalItems": false,
+                              "minItems": 2,
+                              "maxItems": 2
+                            }
+                          ]
                         }
                       }
                     }
@@ -1542,7 +1671,8 @@
                         "sessionTtlHours",
                         "publicWsUrl",
                         "appPriority",
-                        "reserved"
+                        "reserved",
+                        "linkedVlanRange"
                       ],
                       "properties": {
                         "cloneCap": {
@@ -1619,6 +1749,31 @@
                             "minItems": 2,
                             "maxItems": 2
                           }
+                        },
+                        "linkedVlanRange": {
+                          "anyOf": [
+                            {
+                              "type": "null"
+                            },
+                            {
+                              "type": "array",
+                              "items": [
+                                {
+                                  "minimum": 1,
+                                  "maximum": 4094,
+                                  "type": "integer"
+                                },
+                                {
+                                  "minimum": 1,
+                                  "maximum": 4094,
+                                  "type": "integer"
+                                }
+                              ],
+                              "additionalItems": false,
+                              "minItems": 2,
+                              "maxItems": 2
+                            }
+                          ]
                         }
                       }
                     },
@@ -1636,7 +1791,8 @@
                         "sessionTtlHours",
                         "publicWsUrl",
                         "appPriority",
-                        "reserved"
+                        "reserved",
+                        "linkedVlanRange"
                       ],
                       "properties": {
                         "cloneCap": {
@@ -1713,6 +1869,31 @@
                             "minItems": 2,
                             "maxItems": 2
                           }
+                        },
+                        "linkedVlanRange": {
+                          "anyOf": [
+                            {
+                              "type": "null"
+                            },
+                            {
+                              "type": "array",
+                              "items": [
+                                {
+                                  "minimum": 1,
+                                  "maximum": 4094,
+                                  "type": "integer"
+                                },
+                                {
+                                  "minimum": 1,
+                                  "maximum": 4094,
+                                  "type": "integer"
+                                }
+                              ],
+                              "additionalItems": false,
+                              "minItems": 2,
+                              "maxItems": 2
+                            }
+                          ]
                         }
                       }
                     }
@@ -1978,6 +2159,60 @@
                     },
                     "upstreamOk": {
                       "type": "boolean"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/leases": {
+      "get": {
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "leases"
+                  ],
+                  "properties": {
+                    "leases": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "vlan",
+                          "vmids",
+                          "keyName",
+                          "node",
+                          "createdAt"
+                        ],
+                        "properties": {
+                          "vlan": {
+                            "type": "integer"
+                          },
+                          "vmids": {
+                            "type": "array",
+                            "items": {
+                              "type": "integer"
+                            }
+                          },
+                          "keyName": {
+                            "type": "string"
+                          },
+                          "node": {
+                            "type": "string"
+                          },
+                          "createdAt": {
+                            "type": "integer"
+                          }
+                        }
+                      }
                     }
                   }
                 }
