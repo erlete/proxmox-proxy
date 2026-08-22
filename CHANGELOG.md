@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.3.0](https://github.com/DLT-Code/proxmox-proxy/compare/v0.2.0...v0.3.0) (2026-08-22)
+
+
+### Features
+
+* **admission:** per-app fairness, manual priority tiers, settings reset ([ebbb4b0](https://github.com/DLT-Code/proxmox-proxy/commit/ebbb4b0b4a2141995f5dbed37412b4b9823f1100))
+* **edge:** fold the edge into the app and deploy from a published image ([0732b5d](https://github.com/DLT-Code/proxmox-proxy/commit/0732b5de776dceafdff5b1f788e3d73bad79a0f4))
+* **panel:** priority sequence editor and settings reset button ([5486bd3](https://github.com/DLT-Code/proxmox-proxy/commit/5486bd395be2721c2e88b9e122434a7e889a7e6d))
+
 ## [0.2.0](https://github.com/DLT-Code/proxmox-proxy/compare/v0.1.0...v0.2.0) (2026-08-21)
 
 
