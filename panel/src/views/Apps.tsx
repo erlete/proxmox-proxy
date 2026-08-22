@@ -1,11 +1,19 @@
-import { useCallback, useEffect, useState, type FormEvent, type ReactElement, type ReactNode } from 'react'
-import { Ban, Boxes, Check, Copy, Plus, RotateCw } from 'lucide-react'
+import {
+  useCallback,
+  useEffect,
+  useState,
+  type FormEvent,
+  type ReactElement,
+  type ReactNode,
+} from 'react'
+import { Ban, Boxes, Check, Copy, Plus, RotateCw, Trash2 } from 'lucide-react'
 import { api, formatAgo, formatTs } from '../api'
 import type { paths } from '../api/schema'
 
 type KeyList = paths['/api/keys']['get']['responses'][200]['content']['application/json']
 type AppRow = KeyList['keys'][number]
-type OpRows = paths['/api/operations']['get']['responses'][200]['content']['application/json']['rows']
+type OpRows =
+  paths['/api/operations']['get']['responses'][200]['content']['application/json']['rows']
 
 function parseRanges(text: string): [number, number][] | null {
   const parts = text
@@ -25,9 +33,21 @@ function parseRanges(text: string): [number, number][] | null {
   return ranges
 }
 
-function Modal({ title, onClose, children }: { title: string; onClose: () => void; children: ReactNode }): ReactElement {
+function Modal({
+  title,
+  onClose,
+  dismissible = true,
+  children,
+}: {
+  title: string
+  onClose: () => void
+  /** When false, a click on the backdrop does NOT close (avoids losing a
+   * show-once secret to a stray click). Only the modal's own buttons close it. */
+  dismissible?: boolean
+  children: ReactNode
+}): ReactElement {
   return (
-    <div className="modal-backdrop" onClick={onClose}>
+    <div className="modal-backdrop" onClick={dismissible ? onClose : undefined}>
       <div className="modal" onClick={(e) => e.stopPropagation()}>
         <h2>{title}</h2>
         {children}
@@ -37,13 +57,24 @@ function Modal({ title, onClose, children }: { title: string; onClose: () => voi
 }
 
 /** Shown exactly once: the app's ready-to-paste connection config. */
-function ConnectionModal({ name, token, onClose }: { name: string; token: string; onClose: () => void }): ReactElement {
+function ConnectionModal({
+  name,
+  token,
+  onClose,
+}: {
+  name: string
+  token: string
+  onClose: () => void
+}): ReactElement {
   const [copied, setCopied] = useState(false)
   const envBlock = `PROXMOX_PROXY_ENDPOINT=${window.location.origin}\nPROXMOX_PROXY_KEY=${token}`
   return (
-    <Modal title={`Connection config for "${name}"`} onClose={onClose}>
+    // dismissible=false: the secret is shown once, so a stray backdrop click
+    // must not close it. Only Copy/Close dismiss it.
+    <Modal title={`Connection config for "${name}"`} onClose={onClose} dismissible={false}>
       <p>
-        Paste this into the app. The secret is stored hashed and <strong>cannot be shown again</strong>.
+        Paste this into the app. The secret is stored hashed and{' '}
+        <strong>cannot be shown again</strong>.
       </p>
       <code className="token">{envBlock}</code>
       <div className="modal-actions">
@@ -64,7 +95,13 @@ function ConnectionModal({ name, token, onClose }: { name: string; token: string
   )
 }
 
-function CreateModal({ onDone, onClose }: { onDone: (name: string, token: string) => void; onClose: () => void }): ReactElement {
+function CreateModal({
+  onDone,
+  onClose,
+}: {
+  onDone: (name: string, token: string) => void
+  onClose: () => void
+}): ReactElement {
   const [name, setName] = useState('')
   const [rangesText, setRangesText] = useState('')
   const [comment, setComment] = useState('')
@@ -110,7 +147,11 @@ function CreateModal({ onDone, onClose }: { onDone: (name: string, token: string
         </label>
         <label>
           Comment
-          <input value={comment} onChange={(e) => setComment(e.target.value)} placeholder="optional" />
+          <input
+            value={comment}
+            onChange={(e) => setComment(e.target.value)}
+            placeholder="optional"
+          />
         </label>
         {error && <div className="error">{error}</div>}
         <div className="modal-actions">
@@ -127,7 +168,15 @@ function CreateModal({ onDone, onClose }: { onDone: (name: string, token: string
   )
 }
 
-function RotateModal({ name, onDone, onClose }: { name: string; onDone: (token: string) => void; onClose: () => void }): ReactElement {
+function RotateModal({
+  name,
+  onDone,
+  onClose,
+}: {
+  name: string
+  onDone: (token: string) => void
+  onClose: () => void
+}): ReactElement {
   const [grace, setGrace] = useState('24')
   const [error, setError] = useState<string | null>(null)
 
@@ -172,7 +221,15 @@ function RotateModal({ name, onDone, onClose }: { name: string; onDone: (token: 
   )
 }
 
-function RevokeModal({ name, onDone, onClose }: { name: string; onDone: () => void; onClose: () => void }): ReactElement {
+function RevokeModal({
+  name,
+  onDone,
+  onClose,
+}: {
+  name: string
+  onDone: () => void
+  onClose: () => void
+}): ReactElement {
   return (
     <Modal title={`Revoke "${name}"`} onClose={onClose}>
       <p>
@@ -197,6 +254,39 @@ function RevokeModal({ name, onDone, onClose }: { name: string; onDone: () => vo
   )
 }
 
+function DeleteRecordModal({
+  name,
+  onDone,
+  onClose,
+}: {
+  name: string
+  onDone: () => void
+  onClose: () => void
+}): ReactElement {
+  return (
+    <Modal title={`Delete "${name}"`} onClose={onClose}>
+      <p>
+        Removes the revoked app&apos;s record entirely and <strong>frees the name</strong> for
+        reuse. Its operation history stays for the audit trail. This cannot be undone.
+      </p>
+      <div className="modal-actions">
+        <button
+          className="btn danger-solid icon-btn"
+          onClick={() => {
+            void api.DELETE('/api/keys/{name}/purge', { params: { path: { name } } }).then(onDone)
+          }}
+        >
+          <Trash2 size={14} />
+          Delete record
+        </button>
+        <button className="btn" onClick={onClose}>
+          Cancel
+        </button>
+      </div>
+    </Modal>
+  )
+}
+
 export function Apps(): ReactElement {
   const [apps, setApps] = useState<AppRow[]>([])
   const [ops, setOps] = useState<OpRows>([])
@@ -205,6 +295,7 @@ export function Apps(): ReactElement {
     | { kind: 'connection'; name: string; token: string }
     | { kind: 'rotate'; name: string }
     | { kind: 'revoke'; name: string }
+    | { kind: 'delete'; name: string }
     | null
   >(null)
 
@@ -227,7 +318,10 @@ export function Apps(): ReactElement {
     if (!app.enabled) return <span className="badge err">revoked</span>
     if (app.prevValidUntil && app.prevValidUntil > Date.now())
       return (
-        <span className="badge warn" title={`old secret valid until ${formatTs(app.prevValidUntil)}`}>
+        <span
+          className="badge warn"
+          title={`old secret valid until ${formatTs(app.prevValidUntil)}`}
+        >
           rotating
         </span>
       )
@@ -279,12 +373,17 @@ export function Apps(): ReactElement {
                   {app.lastUsedAt ? `active ${formatAgo(app.lastUsedAt)} ago` : 'never seen'}
                 </span>
                 <span>{opCount(app.name)} recent ops</span>
-                <span title={formatTs(app.createdAt)}>since {formatTs(app.createdAt).split(',')[0]}</span>
+                <span title={formatTs(app.createdAt)}>
+                  since {formatTs(app.createdAt).split(',')[0]}
+                </span>
               </div>
               {app.comment && <div className="muted app-comment">{app.comment}</div>}
               {app.enabled && (
                 <div className="app-actions">
-                  <button className="btn small icon-btn" onClick={() => setModal({ kind: 'rotate', name: app.name })}>
+                  <button
+                    className="btn small icon-btn"
+                    onClick={() => setModal({ kind: 'rotate', name: app.name })}
+                  >
                     <RotateCw size={12} />
                     Rotate
                   </button>
@@ -294,6 +393,17 @@ export function Apps(): ReactElement {
                   >
                     <Ban size={12} />
                     Revoke
+                  </button>
+                </div>
+              )}
+              {!app.enabled && (
+                <div className="app-actions">
+                  <button
+                    className="btn small danger-solid icon-btn"
+                    onClick={() => setModal({ kind: 'delete', name: app.name })}
+                  >
+                    <Trash2 size={12} />
+                    Delete record
                   </button>
                 </div>
               )}
@@ -326,6 +436,16 @@ export function Apps(): ReactElement {
       )}
       {modal?.kind === 'revoke' && (
         <RevokeModal
+          name={modal.name}
+          onClose={() => setModal(null)}
+          onDone={() => {
+            setModal(null)
+            void load()
+          }}
+        />
+      )}
+      {modal?.kind === 'delete' && (
+        <DeleteRecordModal
           name={modal.name}
           onClose={() => setModal(null)}
           onDone={() => {

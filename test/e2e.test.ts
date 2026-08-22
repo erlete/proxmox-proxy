@@ -435,6 +435,40 @@ test('red button stops a running task through the proxy', async () => {
   assert.equal(bad.status, 400)
 })
 
+test('purge removes a revoked key record; active keys are protected', async () => {
+  const mk = await fetch(`${adminUrl}/api/keys`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', cookie },
+    body: JSON.stringify({ name: 'app-z', vmidRanges: [[1100000, 1100999]] }),
+  })
+  assert.equal(mk.status, 201)
+
+  // An active key cannot be purged: revoke first.
+  const early = await fetch(`${adminUrl}/api/keys/app-z/purge`, {
+    method: 'DELETE',
+    headers: { cookie },
+  })
+  assert.equal(early.status, 409)
+
+  const rev = await fetch(`${adminUrl}/api/keys/app-z`, { method: 'DELETE', headers: { cookie } })
+  assert.equal(rev.status, 204)
+  const purge = await fetch(`${adminUrl}/api/keys/app-z/purge`, {
+    method: 'DELETE',
+    headers: { cookie },
+  })
+  assert.equal(purge.status, 204)
+
+  const list = await fetch(`${adminUrl}/api/keys`, { headers: { cookie } })
+  const { keys } = (await list.json()) as { keys: { name: string }[] }
+  assert.ok(!keys.some((k) => k.name === 'app-z'))
+
+  const missing = await fetch(`${adminUrl}/api/keys/app-z/purge`, {
+    method: 'DELETE',
+    headers: { cookie },
+  })
+  assert.equal(missing.status, 404)
+})
+
 // Must run last: it shuts the app down. Regression test for the deploy bug
 // where a live SSE stream kept the server from closing and the process died
 // before releasing the cluster lock, blocking the successor for staleMs.

@@ -294,6 +294,30 @@ export async function buildAdminServer(deps: AdminDeps): Promise<FastifyInstance
     },
   )
 
+  // Hard-delete a revoked key's record (remove its trace). Revoked-first: an
+  // active key must be revoked before it can be deleted, to avoid a fat-finger
+  // removal of a live app.
+  app.delete(
+    '/api/keys/:name/purge',
+    {
+      schema: {
+        params: { type: 'object', properties: { name: { type: 'string' } }, required: ['name'] },
+        response: { 204: {}, 404: ErrorReply, 409: ErrorReply },
+      },
+    },
+    async (req, reply) => {
+      const { name } = req.params as { name: string }
+      const key = keys.get(name)
+      if (!key) return reply.code(404).send({ message: `unknown key: ${name}` })
+      if (key.enabled) {
+        return reply.code(409).send({ message: 'revoke the key before deleting its record' })
+      }
+      keys.remove(name)
+      log.info('api key record purged', { name })
+      return reply.code(204).send()
+    },
+  )
+
   app.get(
     '/api/operations',
     { schema: { querystring: OperationsQuery, response: { 200: OperationsReply } } },

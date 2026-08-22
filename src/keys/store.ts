@@ -149,6 +149,18 @@ export class KeyStore {
     return true
   }
 
+  /**
+   * Hard-delete the record and free the name for reuse. Only meant for an
+   * already-revoked key: removing the trace of an app that no longer exists.
+   */
+  remove(name: string): boolean {
+    if (!this.cache.has(name)) return false
+    this.db.prepare('DELETE FROM api_keys WHERE name = ?').run(name)
+    this.cache.delete(name)
+    this.lastUsedFlushed.delete(name)
+    return true
+  }
+
   list(): ApiKeyRecord[] {
     return [...this.cache.values()]
       .map((e) => ({
