@@ -458,6 +458,22 @@ test('reserved VMIDs are denied for every app, beating key scope', async () => {
   })
   assert.equal(clone.status, 403)
 
+  // An LXC clone whose newid is reserved is denied (body target, not path).
+  const lxcClone = await fetch(`${dataUrl}/api2/json/nodes/n1/lxc/1100050/clone`, {
+    method: 'POST',
+    headers: { authorization: appToken, 'content-type': 'application/x-www-form-urlencoded' },
+    body: 'newid=1100200',
+  })
+  assert.equal(lxcClone.status, 403)
+
+  // A disk move onto a reserved target is denied (target-vmid in the body).
+  const move = await fetch(`${dataUrl}/api2/json/nodes/n1/qemu/1100100/move_disk`, {
+    method: 'POST',
+    headers: { authorization: appToken, 'content-type': 'application/x-www-form-urlencoded' },
+    body: 'disk=scsi0&storage=local&target-vmid=1100200',
+  })
+  assert.equal(move.status, 403)
+
   // A non-reserved VMID in range still works.
   const ok = await fetch(`${dataUrl}/api2/json/nodes/n1/qemu/1100100/status/current`, {
     headers: { authorization: appToken },

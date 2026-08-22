@@ -96,13 +96,19 @@ function readBody(req: IncomingMessage, limit: number): Promise<Buffer> {
   })
 }
 
-function extractNewid(body: Buffer, contentType: string | undefined): number | null {
+/** Read a target VMID named in the request body (clone `newid`, move
+ * `target-vmid`), from either a JSON or a form-encoded body. */
+function extractBodyVmid(
+  body: Buffer,
+  contentType: string | undefined,
+  param: string,
+): number | null {
   try {
     let raw: unknown
     if (contentType?.includes('application/json')) {
-      raw = (JSON.parse(body.toString()) as Record<string, unknown>).newid
+      raw = (JSON.parse(body.toString()) as Record<string, unknown>)[param]
     } else {
-      raw = new URLSearchParams(body.toString()).get('newid')
+      raw = new URLSearchParams(body.toString()).get(param)
     }
     if (raw == null) return null
     const n = typeof raw === 'number' ? raw : Number.parseInt(String(raw), 10)
@@ -160,7 +166,7 @@ export function createDataPlaneHandler(deps: DataPlaneDeps): RequestListener {
 
     // A clone names its target in the body: that VMID must also be in range.
     if (cls.opClass === 'clone') {
-      const newid = extractNewid(body, req.headers['content-type'])
+      const newid = extractBodyVmid(body, req.headers['content-type'], 'newid')
       if (newid == null) {
         sendJson(res, 400, { message: 'clone through the proxy requires an explicit newid' })
         return
@@ -415,6 +421,82 @@ export function createDataPlaneHandler(deps: DataPlaneDeps): RequestListener {
     }
   }
 
+  /**
+   * Ops that name a TARGET VMID in the body (move_disk / move_volume). The body
+   * must be buffered to read the target, which is then reserved-checked and
+   * scope-checked before forwarding (the path VMID is only the source). Not
+   * admission-gated: a move is not a pool clone/delete/suspend.
+   */
+  async function handleBodyTargetPass(
+    req: IncomingMessage,
+    res: ServerResponse,
+    url: URL,
+    cls: Classified,
+    key: ApiKeyRecord,
+    started: number,
+  ): Promise<void> {
+    const method = req.method as Dispatcher.HttpMethod
+    let body: Buffer
+    try {
+      body = await readBody(req, MAX_HEAVY_BODY)
+    } catch (err) {
+      if (err instanceof PayloadTooLargeError) {
+        sendJson(res, 413, { message: 'request body too large' })
+        return
+      }
+      return // client went away mid-body
+    }
+
+    const base = {
+      keyName: key.name,
+      method: req.method ?? '',
+      path: url.pathname,
+      opClass: null,
+      queueMs: null,
+      upid: null,
+    }
+    const target = extractBodyVmid(body, req.headers['content-type'], cls.bodyTarget!)
+    if (target != null) {
+      if (vmidAllowed(settings.reservedRanges, target)) {
+        sendJson(res, 403, { message: `target vmid ${target} is reserved` })
+        ops.record({
+          ...base,
+          vmid: target,
+          status: 403,
+          durationMs: null,
+          note: 'reserved-target',
+        })
+        return
+      }
+      if (!vmidAllowed(key.vmidRanges, target)) {
+        sendJson(res, 403, { message: `target vmid ${target} is outside the ranges of this key` })
+        ops.record({ ...base, vmid: target, status: 403, durationMs: null, note: 'denied-target' })
+        return
+      }
+    }
+
+    try {
+      const headers = fwdHeaders(req, serviceAuth)
+      headers['content-length'] = String(body.length)
+      const r = await upstream.raw({ method, path: url.pathname + url.search, headers, body })
+      const respBuf = Buffer.from(await r.body.arrayBuffer())
+      ops.record({
+        ...base,
+        vmid: cls.pathVmid ?? target,
+        status: r.statusCode,
+        durationMs: Date.now() - started,
+        note: 'move',
+      })
+      const out = respHeaders(r.headers)
+      out['content-length'] = String(respBuf.length)
+      res.writeHead(r.statusCode, out)
+      res.end(respBuf)
+    } catch (err) {
+      sendJson(res, 502, { message: 'upstream unavailable' })
+      log.warn('body-target forward failed', { path: url.pathname, error: String(err) })
+    }
+  }
+
   return (req, res) => {
     void (async () => {
       const started = Date.now()
@@ -535,6 +617,8 @@ export function createDataPlaneHandler(deps: DataPlaneDeps): RequestListener {
           return
         }
         await handleHeavy(req, res, url, cls, key, started)
+      } else if (cls.bodyTarget) {
+        await handleBodyTargetPass(req, res, url, cls, key, started)
       } else await handlePass(req, res, url, cls, key, started)
     })().catch((err) => {
       log.error('data plane handler crash', { error: String(err) })

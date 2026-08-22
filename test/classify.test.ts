@@ -12,6 +12,23 @@ test('classifies heavy operations', () => {
   assert.equal(classify('POST', '/api2/extjs/nodes/n1/qemu/1100100/clone').opClass, 'clone')
 })
 
+test('qemu and lxc share heavy classification and body targets', () => {
+  const lxcClone = classify('POST', '/api2/json/nodes/n1/lxc/200/clone')
+  assert.equal(lxcClone.opClass, 'clone')
+  assert.equal(lxcClone.bodyTarget, 'newid')
+  assert.equal(classify('POST', '/api2/json/nodes/n1/qemu/100/clone').bodyTarget, 'newid')
+  assert.equal(classify('DELETE', '/api2/json/nodes/n1/lxc/200').opClass, 'delete')
+  assert.equal(classify('POST', '/api2/json/nodes/n1/lxc/200/status/suspend').opClass, 'suspend')
+
+  const move = classify('POST', '/api2/json/nodes/n1/qemu/100/move_disk')
+  assert.equal(move.opClass, null)
+  assert.equal(move.bodyTarget, 'target-vmid')
+  assert.equal(
+    classify('POST', '/api2/json/nodes/n1/lxc/200/move_volume').bodyTarget,
+    'target-vmid',
+  )
+})
+
 test('pass operations carry no class', () => {
   assert.equal(classify('POST', '/api2/json/nodes/n1/qemu/1100100/status/start').opClass, null)
   assert.equal(classify('GET', '/api2/json/nodes/n1/qemu/1100100/status/current').opClass, null)

@@ -7,13 +7,24 @@ export interface Classified {
   pathVmid: number | null
   /** VMID recovered from a task UPID in the path, if any. */
   upidVmid: number | null
+  /**
+   * Body parameter naming a TARGET VMID this op creates or mutates (clone's
+   * `newid`, move_disk/move_volume's `target-vmid`). The forwarder must read it
+   * and enforce reserved + key scope on it: the path VMID is only the source.
+   */
+  bodyTarget: 'newid' | 'target-vmid' | null
   /** Non-null = deny with this reason. */
   blocked: string | null
 }
 
-const CLONE_RE = /^\/api2\/(?:json|extjs)\/nodes\/([^/]+)\/qemu\/(\d+)\/clone\/?$/
-const DELETE_RE = /^\/api2\/(?:json|extjs)\/nodes\/([^/]+)\/qemu\/(\d+)\/?$/
-const SUSPEND_RE = /^\/api2\/(?:json|extjs)\/nodes\/([^/]+)\/qemu\/(\d+)\/status\/suspend\/?$/
+// qemu and lxc share the same pool cost, so both are gated / target-checked.
+const CLONE_RE = /^\/api2\/(?:json|extjs)\/nodes\/([^/]+)\/(?:qemu|lxc)\/(\d+)\/clone\/?$/
+const DELETE_RE = /^\/api2\/(?:json|extjs)\/nodes\/([^/]+)\/(?:qemu|lxc)\/(\d+)\/?$/
+const SUSPEND_RE =
+  /^\/api2\/(?:json|extjs)\/nodes\/([^/]+)\/(?:qemu|lxc)\/(\d+)\/status\/suspend\/?$/
+// A disk/volume move can attach onto a DIFFERENT target VM named in the body.
+const MOVE_RE =
+  /^\/api2\/(?:json|extjs)\/nodes\/([^/]+)\/(?:qemu\/(\d+)\/move_disk|lxc\/(\d+)\/move_volume)\/?$/
 const GENERIC_VMID_RE = /\/(?:qemu|lxc)\/(\d+)(?:\/|$)/
 const NODE_RE = /^\/api2\/(?:json|extjs)\/nodes\/([^/]+)/
 const ACCESS_RE = /^\/api2\/[^/]+\/access(?:\/|$)/
@@ -33,6 +44,7 @@ export function classify(method: string, pathname: string): Classified {
     node: null,
     pathVmid: null,
     upidVmid: null,
+    bodyTarget: null,
     blocked: null,
   }
 
@@ -51,8 +63,16 @@ export function classify(method: string, pathname: string): Classified {
   if (task) out.upidVmid = vmidFromUpid(task[1])
 
   if (method === 'POST') {
-    if (CLONE_RE.test(pathname)) out.opClass = 'clone'
-    else if (SUSPEND_RE.test(pathname)) out.opClass = 'suspend'
+    if (CLONE_RE.test(pathname)) {
+      out.opClass = 'clone'
+      out.bodyTarget = 'newid'
+    } else if (SUSPEND_RE.test(pathname)) {
+      out.opClass = 'suspend'
+    } else if (MOVE_RE.test(pathname)) {
+      // Not a contended pool op, but it names a target VM in the body that must
+      // be reserved-checked and scope-checked before forwarding.
+      out.bodyTarget = 'target-vmid'
+    }
   } else if (method === 'DELETE' && DELETE_RE.test(pathname)) {
     out.opClass = 'delete'
   }
