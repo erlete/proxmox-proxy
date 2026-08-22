@@ -45,4 +45,9 @@ jobs:
         continue-on-error: true
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh release upload "${{ github.event.release.tag_name }}" compose.yml .env.example --clobber
+        # Upload the env template under a dot-less name: GitHub rewrites a
+        # leading-dot asset to "default.env.example", which the README's
+        # `gh release download -p env.example` pattern would then miss.
+        run: |
+          cp .env.example env.example
+          gh release upload "${{ github.event.release.tag_name }}" compose.yml env.example --clobber
