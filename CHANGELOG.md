@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.0](https://github.com/DLT-Code/proxmox-proxy/compare/v0.5.2...v0.6.0) (2026-08-22)
+
+
+### Features
+
+* **proxy:** operate a linked-clone group as one unit ([4ecbfc9](https://github.com/DLT-Code/proxmox-proxy/commit/4ecbfc935c431755678f84774ded4c0ec340d731))
+
 ## [0.5.2](https://github.com/DLT-Code/proxmox-proxy/compare/v0.5.1...v0.5.2) (2026-08-22)
 
 
