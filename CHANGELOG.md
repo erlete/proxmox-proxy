@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.2](https://github.com/DLT-Code/proxmox-proxy/compare/v0.5.1...v0.5.2) (2026-08-22)
+
+
+### Bug Fixes
+
+* **proxy:** harden data plane and reaper per adversarial review ([34824ae](https://github.com/DLT-Code/proxmox-proxy/commit/34824aebe99885af10f11728d228671aff811bb3))
+
 ## [0.5.1](https://github.com/DLT-Code/proxmox-proxy/compare/v0.5.0...v0.5.1) (2026-08-22)
 
 

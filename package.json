@@ -1,6 +1,6 @@
 {
   "name": "proxmox-proxy",
-  "version": "0.5.1",
+  "version": "0.5.2",
   "private": true,
   "description": "Single control-plane entrypoint for apps sharing a Proxmox VE cluster",
   "type": "module",
