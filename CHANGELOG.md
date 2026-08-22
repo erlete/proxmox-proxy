@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.7.0](https://github.com/DLT-Code/proxmox-proxy/compare/v0.6.0...v0.7.0) (2026-08-22)
+
+
+### Features
+
+* **panel:** Proxmox VE console look and tree-driven navigation ([950a630](https://github.com/DLT-Code/proxmox-proxy/commit/950a630b7c966fcf2e87a55c79a8d3184bddd574))
+
 ## [0.6.0](https://github.com/DLT-Code/proxmox-proxy/compare/v0.5.2...v0.6.0) (2026-08-22)
 
 
