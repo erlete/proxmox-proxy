@@ -4,1129 +4,1078 @@
  */
 
 export interface paths {
-    "/api/session": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path?: never;
-                cookie?: never;
-            };
-            requestBody: {
-                content: {
-                    "application/json": {
-                        username: string;
-                        password: string;
-                    };
-                };
-            };
-            responses: {
-                /** @description Default Response */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": {
-                            username: string;
-                        };
-                    };
-                };
-                /** @description Default Response */
-                401: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": {
-                            message: string;
-                        };
-                    };
-                };
-                /** @description Default Response */
-                429: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": {
-                            message: string;
-                        };
-                    };
-                };
-            };
-        };
-        delete: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path?: never;
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Default Response */
-                204: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": unknown;
-                    };
-                };
-            };
-        };
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/me": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path?: never;
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Default Response */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": {
-                            username: string;
-                        };
-                    };
-                };
-            };
-        };
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/health": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path?: never;
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Default Response */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": {
-                            status: string;
-                            upstreamOk: boolean;
-                            singletonHeld: boolean;
-                        };
-                    };
-                };
-            };
-        };
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/status": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path?: never;
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Default Response */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": {
-                            version: string;
-                            startedAt: number;
-                            uptimeMs: number;
-                            singleton: {
-                                enabled: boolean;
-                                held: boolean;
-                                instanceId: string;
-                            };
-                            upstream: {
-                                ok: boolean;
-                                version: string | null;
-                                checkedAt: number;
-                                error: string | null;
-                            };
-                            admission: {
-                                name: string;
-                                cap: number;
-                                outOfBand: number;
-                                effectiveCap: number;
-                                active: number;
-                                waiting: number;
-                            }[];
-                        };
-                    };
-                };
-            };
-        };
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/queues": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path?: never;
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Default Response */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": {
-                            priorityApps: string[];
-                            classes: {
-                                name: string;
-                                cap: number;
-                                outOfBand: number;
-                                effectiveCap: number;
-                                running: {
-                                    id: number;
-                                    keyName: string;
-                                    vmid: number | null;
-                                    node: string | null;
-                                    upid: string | null;
-                                    grantedAt: number;
-                                    taskStartedAt: number | null;
-                                }[];
-                                waiting: {
-                                    id: number;
-                                    keyName: string;
-                                    vmid: number | null;
-                                    enqueuedAt: number;
-                                }[];
-                            }[];
-                        };
-                    };
-                };
-            };
-        };
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/keys": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path?: never;
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Default Response */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": {
-                            keys: {
-                                name: string;
-                                vmidRanges: [
-                                    number,
-                                    number
-                                ][];
-                                comment: string;
-                                enabled: boolean;
-                                createdAt: number;
-                                rotatedAt: number | null;
-                                lastUsedAt: number | null;
-                                prevValidUntil: number | null;
-                            }[];
-                        };
-                    };
-                };
-            };
-        };
-        put?: never;
-        post: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path?: never;
-                cookie?: never;
-            };
-            requestBody: {
-                content: {
-                    "application/json": {
-                        name: string;
-                        vmidRanges: [
-                            number,
-                            number
-                        ][];
-                        comment?: string;
-                    };
-                };
-            };
-            responses: {
-                /** @description Default Response */
-                201: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": {
-                            name: string;
-                            token: string;
-                        };
-                    };
-                };
-                /** @description Default Response */
-                400: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": {
-                            message: string;
-                        };
-                    };
-                };
-                /** @description Default Response */
-                409: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": {
-                            message: string;
-                        };
-                    };
-                };
-            };
-        };
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/keys/{name}/rotate": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    name: string;
-                };
-                cookie?: never;
-            };
-            requestBody: {
-                content: {
-                    "application/json": {
-                        graceHours?: number;
-                    };
-                };
-            };
-            responses: {
-                /** @description Default Response */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": {
-                            name: string;
-                            token: string;
-                        };
-                    };
-                };
-                /** @description Default Response */
-                404: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": {
-                            message: string;
-                        };
-                    };
-                };
-            };
-        };
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/keys/{name}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post?: never;
-        delete: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    name: string;
-                };
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Default Response */
-                204: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": unknown;
-                    };
-                };
-                /** @description Default Response */
-                404: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": {
-                            message: string;
-                        };
-                    };
-                };
-            };
-        };
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/keys/{name}/purge": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post?: never;
-        delete: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    name: string;
-                };
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Default Response */
-                204: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": unknown;
-                    };
-                };
-                /** @description Default Response */
-                404: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": {
-                            message: string;
-                        };
-                    };
-                };
-                /** @description Default Response */
-                409: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": {
-                            message: string;
-                        };
-                    };
-                };
-            };
-        };
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/operations": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: {
-            parameters: {
-                query?: {
-                    limit?: number;
-                    opClass?: string;
-                    key?: string;
-                };
-                header?: never;
-                path?: never;
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Default Response */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": {
-                            rows: {
-                                id: number;
-                                ts: number;
-                                keyName: string;
-                                method: string;
-                                path: string;
-                                opClass: string | null;
-                                vmid: number | null;
-                                status: number | null;
-                                queueMs: number | null;
-                                durationMs: number | null;
-                                taskMs: number | null;
-                                upid: string | null;
-                                note: string | null;
-                            }[];
-                        };
-                    };
-                };
-            };
-        };
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/settings": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path?: never;
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Default Response */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": {
-                            settings: {
-                                cloneCap: number;
-                                deleteCap: number;
-                                suspendCap: number;
-                                maxQueue: number;
-                                maxHoldMs: number;
-                                taskPollMs: number;
-                                taskTimeoutMs: number;
-                                opsRingMax: number;
-                                sessionTtlHours: number;
-                                publicWsUrl: string;
-                                appPriority: {
-                                    [key: string]: number;
-                                };
-                                reserved: [
-                                    number,
-                                    number
-                                ][];
-                                linkedVlanRange: null | [
-                                    number,
-                                    number
-                                ];
-                            };
-                            defaults: {
-                                cloneCap: number;
-                                deleteCap: number;
-                                suspendCap: number;
-                                maxQueue: number;
-                                maxHoldMs: number;
-                                taskPollMs: number;
-                                taskTimeoutMs: number;
-                                opsRingMax: number;
-                                sessionTtlHours: number;
-                                publicWsUrl: string;
-                                appPriority: {
-                                    [key: string]: number;
-                                };
-                                reserved: [
-                                    number,
-                                    number
-                                ][];
-                                linkedVlanRange: null | [
-                                    number,
-                                    number
-                                ];
-                            };
-                        };
-                    };
-                };
-            };
-        };
-        put: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path?: never;
-                cookie?: never;
-            };
-            requestBody: {
-                content: {
-                    "application/json": {
-                        cloneCap?: number;
-                        deleteCap?: number;
-                        suspendCap?: number;
-                        maxQueue?: number;
-                        maxHoldMs?: number;
-                        taskPollMs?: number;
-                        taskTimeoutMs?: number;
-                        opsRingMax?: number;
-                        sessionTtlHours?: number;
-                        publicWsUrl?: string;
-                        appPriority?: {
-                            [key: string]: number;
-                        };
-                        reserved?: [
-                            number,
-                            number
-                        ][];
-                        linkedVlanRange?: null | [
-                            number,
-                            number
-                        ];
-                    };
-                };
-            };
-            responses: {
-                /** @description Default Response */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": {
-                            settings: {
-                                cloneCap: number;
-                                deleteCap: number;
-                                suspendCap: number;
-                                maxQueue: number;
-                                maxHoldMs: number;
-                                taskPollMs: number;
-                                taskTimeoutMs: number;
-                                opsRingMax: number;
-                                sessionTtlHours: number;
-                                publicWsUrl: string;
-                                appPriority: {
-                                    [key: string]: number;
-                                };
-                                reserved: [
-                                    number,
-                                    number
-                                ][];
-                                linkedVlanRange: null | [
-                                    number,
-                                    number
-                                ];
-                            };
-                            defaults: {
-                                cloneCap: number;
-                                deleteCap: number;
-                                suspendCap: number;
-                                maxQueue: number;
-                                maxHoldMs: number;
-                                taskPollMs: number;
-                                taskTimeoutMs: number;
-                                opsRingMax: number;
-                                sessionTtlHours: number;
-                                publicWsUrl: string;
-                                appPriority: {
-                                    [key: string]: number;
-                                };
-                                reserved: [
-                                    number,
-                                    number
-                                ][];
-                                linkedVlanRange: null | [
-                                    number,
-                                    number
-                                ];
-                            };
-                        };
-                    };
-                };
-                /** @description Default Response */
-                400: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": {
-                            message: string;
-                        };
-                    };
-                };
-            };
-        };
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/settings/reset": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path?: never;
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Default Response */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": {
-                            settings: {
-                                cloneCap: number;
-                                deleteCap: number;
-                                suspendCap: number;
-                                maxQueue: number;
-                                maxHoldMs: number;
-                                taskPollMs: number;
-                                taskTimeoutMs: number;
-                                opsRingMax: number;
-                                sessionTtlHours: number;
-                                publicWsUrl: string;
-                                appPriority: {
-                                    [key: string]: number;
-                                };
-                                reserved: [
-                                    number,
-                                    number
-                                ][];
-                                linkedVlanRange: null | [
-                                    number,
-                                    number
-                                ];
-                            };
-                            defaults: {
-                                cloneCap: number;
-                                deleteCap: number;
-                                suspendCap: number;
-                                maxQueue: number;
-                                maxHoldMs: number;
-                                taskPollMs: number;
-                                taskTimeoutMs: number;
-                                opsRingMax: number;
-                                sessionTtlHours: number;
-                                publicWsUrl: string;
-                                appPriority: {
-                                    [key: string]: number;
-                                };
-                                reserved: [
-                                    number,
-                                    number
-                                ][];
-                                linkedVlanRange: null | [
-                                    number,
-                                    number
-                                ];
-                            };
-                        };
-                    };
-                };
-            };
-        };
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/tasks/stop": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path?: never;
-                cookie?: never;
-            };
-            requestBody: {
-                content: {
-                    "application/json": {
-                        upid: string;
-                    };
-                };
-            };
-            responses: {
-                /** @description Default Response */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": {
-                            upid: string;
-                            node: string;
-                            stopped: boolean;
-                        };
-                    };
-                };
-                /** @description Default Response */
-                400: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": {
-                            message: string;
-                        };
-                    };
-                };
-                /** @description Default Response */
-                502: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": {
-                            message: string;
-                        };
-                    };
-                };
-            };
-        };
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/inventory": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path?: never;
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Default Response */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": {
-                            reserved: {
-                                vmid: number;
-                                node: string;
-                                name: string;
-                                status: string;
-                                type: string;
-                                template: boolean;
-                                reserved: boolean;
-                            }[];
-                            apps: {
-                                name: string;
-                                vmidRanges: [
-                                    number,
-                                    number
-                                ][];
-                                vms: {
-                                    vmid: number;
-                                    node: string;
-                                    name: string;
-                                    status: string;
-                                    type: string;
-                                    template: boolean;
-                                    reserved: boolean;
-                                }[];
-                            }[];
-                            unassigned: {
-                                vmid: number;
-                                node: string;
-                                name: string;
-                                status: string;
-                                type: string;
-                                template: boolean;
-                                reserved: boolean;
-                            }[];
-                            upstreamOk: boolean;
-                        };
-                    };
-                };
-            };
-        };
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/leases": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path?: never;
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Default Response */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": {
-                            leases: {
-                                vlan: number;
-                                vmids: number[];
-                                keyName: string;
-                                node: string;
-                                createdAt: number;
-                            }[];
-                        };
-                    };
-                };
-            };
-        };
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/events": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path?: never;
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Default Response */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content?: never;
-                };
-            };
-        };
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/openapi.json": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path?: never;
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Default Response */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content?: never;
-                };
-            };
-        };
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
+  '/api/session': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    post: {
+      parameters: {
+        query?: never
+        header?: never
+        path?: never
+        cookie?: never
+      }
+      requestBody: {
+        content: {
+          'application/json': {
+            username: string
+            password: string
+          }
+        }
+      }
+      responses: {
+        /** @description Default Response */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': {
+              username: string
+            }
+          }
+        }
+        /** @description Default Response */
+        401: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': {
+              message: string
+            }
+          }
+        }
+        /** @description Default Response */
+        429: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': {
+              message: string
+            }
+          }
+        }
+      }
+    }
+    delete: {
+      parameters: {
+        query?: never
+        header?: never
+        path?: never
+        cookie?: never
+      }
+      requestBody?: never
+      responses: {
+        /** @description Default Response */
+        204: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': unknown
+          }
+        }
+      }
+    }
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/me': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get: {
+      parameters: {
+        query?: never
+        header?: never
+        path?: never
+        cookie?: never
+      }
+      requestBody?: never
+      responses: {
+        /** @description Default Response */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': {
+              username: string
+            }
+          }
+        }
+      }
+    }
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/health': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get: {
+      parameters: {
+        query?: never
+        header?: never
+        path?: never
+        cookie?: never
+      }
+      requestBody?: never
+      responses: {
+        /** @description Default Response */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': {
+              status: string
+              upstreamOk: boolean
+              singletonHeld: boolean
+            }
+          }
+        }
+      }
+    }
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/status': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get: {
+      parameters: {
+        query?: never
+        header?: never
+        path?: never
+        cookie?: never
+      }
+      requestBody?: never
+      responses: {
+        /** @description Default Response */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': {
+              version: string
+              startedAt: number
+              uptimeMs: number
+              singleton: {
+                enabled: boolean
+                held: boolean
+                instanceId: string
+              }
+              upstream: {
+                ok: boolean
+                version: string | null
+                checkedAt: number
+                error: string | null
+              }
+              admission: {
+                name: string
+                cap: number
+                outOfBand: number
+                effectiveCap: number
+                active: number
+                waiting: number
+              }[]
+            }
+          }
+        }
+      }
+    }
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/queues': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get: {
+      parameters: {
+        query?: never
+        header?: never
+        path?: never
+        cookie?: never
+      }
+      requestBody?: never
+      responses: {
+        /** @description Default Response */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': {
+              priorityApps: string[]
+              classes: {
+                name: string
+                cap: number
+                outOfBand: number
+                effectiveCap: number
+                running: {
+                  id: number
+                  keyName: string
+                  vmid: number | null
+                  node: string | null
+                  upid: string | null
+                  grantedAt: number
+                  taskStartedAt: number | null
+                }[]
+                waiting: {
+                  id: number
+                  keyName: string
+                  vmid: number | null
+                  enqueuedAt: number
+                }[]
+              }[]
+            }
+          }
+        }
+      }
+    }
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/keys': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get: {
+      parameters: {
+        query?: never
+        header?: never
+        path?: never
+        cookie?: never
+      }
+      requestBody?: never
+      responses: {
+        /** @description Default Response */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': {
+              keys: {
+                name: string
+                vmidRanges: [number, number][]
+                comment: string
+                enabled: boolean
+                createdAt: number
+                rotatedAt: number | null
+                lastUsedAt: number | null
+                prevValidUntil: number | null
+              }[]
+            }
+          }
+        }
+      }
+    }
+    put?: never
+    post: {
+      parameters: {
+        query?: never
+        header?: never
+        path?: never
+        cookie?: never
+      }
+      requestBody: {
+        content: {
+          'application/json': {
+            name: string
+            vmidRanges: [number, number][]
+            comment?: string
+          }
+        }
+      }
+      responses: {
+        /** @description Default Response */
+        201: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': {
+              name: string
+              token: string
+            }
+          }
+        }
+        /** @description Default Response */
+        400: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': {
+              message: string
+            }
+          }
+        }
+        /** @description Default Response */
+        409: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': {
+              message: string
+            }
+          }
+        }
+      }
+    }
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/keys/{name}/rotate': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    post: {
+      parameters: {
+        query?: never
+        header?: never
+        path: {
+          name: string
+        }
+        cookie?: never
+      }
+      requestBody: {
+        content: {
+          'application/json': {
+            graceHours?: number
+          }
+        }
+      }
+      responses: {
+        /** @description Default Response */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': {
+              name: string
+              token: string
+            }
+          }
+        }
+        /** @description Default Response */
+        404: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': {
+              message: string
+            }
+          }
+        }
+      }
+    }
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/keys/{name}': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    post?: never
+    delete: {
+      parameters: {
+        query?: never
+        header?: never
+        path: {
+          name: string
+        }
+        cookie?: never
+      }
+      requestBody?: never
+      responses: {
+        /** @description Default Response */
+        204: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': unknown
+          }
+        }
+        /** @description Default Response */
+        404: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': {
+              message: string
+            }
+          }
+        }
+      }
+    }
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/keys/{name}/purge': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    post?: never
+    delete: {
+      parameters: {
+        query?: never
+        header?: never
+        path: {
+          name: string
+        }
+        cookie?: never
+      }
+      requestBody?: never
+      responses: {
+        /** @description Default Response */
+        204: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': unknown
+          }
+        }
+        /** @description Default Response */
+        404: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': {
+              message: string
+            }
+          }
+        }
+        /** @description Default Response */
+        409: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': {
+              message: string
+            }
+          }
+        }
+      }
+    }
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/operations': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get: {
+      parameters: {
+        query?: {
+          limit?: number
+          opClass?: string
+          key?: string
+        }
+        header?: never
+        path?: never
+        cookie?: never
+      }
+      requestBody?: never
+      responses: {
+        /** @description Default Response */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': {
+              rows: {
+                id: number
+                ts: number
+                keyName: string
+                method: string
+                path: string
+                opClass: string | null
+                vmid: number | null
+                status: number | null
+                queueMs: number | null
+                durationMs: number | null
+                taskMs: number | null
+                upid: string | null
+                note: string | null
+              }[]
+            }
+          }
+        }
+      }
+    }
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/settings': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get: {
+      parameters: {
+        query?: never
+        header?: never
+        path?: never
+        cookie?: never
+      }
+      requestBody?: never
+      responses: {
+        /** @description Default Response */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': {
+              settings: {
+                cloneCap: number
+                deleteCap: number
+                suspendCap: number
+                maxQueue: number
+                maxHoldMs: number
+                taskPollMs: number
+                taskTimeoutMs: number
+                opsRingMax: number
+                sessionTtlHours: number
+                publicWsUrl: string
+                appPriority: {
+                  [key: string]: number
+                }
+                reserved: [number, number][]
+                linkedVlanRange: null | [number, number]
+              }
+              defaults: {
+                cloneCap: number
+                deleteCap: number
+                suspendCap: number
+                maxQueue: number
+                maxHoldMs: number
+                taskPollMs: number
+                taskTimeoutMs: number
+                opsRingMax: number
+                sessionTtlHours: number
+                publicWsUrl: string
+                appPriority: {
+                  [key: string]: number
+                }
+                reserved: [number, number][]
+                linkedVlanRange: null | [number, number]
+              }
+            }
+          }
+        }
+      }
+    }
+    put: {
+      parameters: {
+        query?: never
+        header?: never
+        path?: never
+        cookie?: never
+      }
+      requestBody: {
+        content: {
+          'application/json': {
+            cloneCap?: number
+            deleteCap?: number
+            suspendCap?: number
+            maxQueue?: number
+            maxHoldMs?: number
+            taskPollMs?: number
+            taskTimeoutMs?: number
+            opsRingMax?: number
+            sessionTtlHours?: number
+            publicWsUrl?: string
+            appPriority?: {
+              [key: string]: number
+            }
+            reserved?: [number, number][]
+            linkedVlanRange?: null | [number, number]
+          }
+        }
+      }
+      responses: {
+        /** @description Default Response */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': {
+              settings: {
+                cloneCap: number
+                deleteCap: number
+                suspendCap: number
+                maxQueue: number
+                maxHoldMs: number
+                taskPollMs: number
+                taskTimeoutMs: number
+                opsRingMax: number
+                sessionTtlHours: number
+                publicWsUrl: string
+                appPriority: {
+                  [key: string]: number
+                }
+                reserved: [number, number][]
+                linkedVlanRange: null | [number, number]
+              }
+              defaults: {
+                cloneCap: number
+                deleteCap: number
+                suspendCap: number
+                maxQueue: number
+                maxHoldMs: number
+                taskPollMs: number
+                taskTimeoutMs: number
+                opsRingMax: number
+                sessionTtlHours: number
+                publicWsUrl: string
+                appPriority: {
+                  [key: string]: number
+                }
+                reserved: [number, number][]
+                linkedVlanRange: null | [number, number]
+              }
+            }
+          }
+        }
+        /** @description Default Response */
+        400: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': {
+              message: string
+            }
+          }
+        }
+      }
+    }
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/settings/reset': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    post: {
+      parameters: {
+        query?: never
+        header?: never
+        path?: never
+        cookie?: never
+      }
+      requestBody?: never
+      responses: {
+        /** @description Default Response */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': {
+              settings: {
+                cloneCap: number
+                deleteCap: number
+                suspendCap: number
+                maxQueue: number
+                maxHoldMs: number
+                taskPollMs: number
+                taskTimeoutMs: number
+                opsRingMax: number
+                sessionTtlHours: number
+                publicWsUrl: string
+                appPriority: {
+                  [key: string]: number
+                }
+                reserved: [number, number][]
+                linkedVlanRange: null | [number, number]
+              }
+              defaults: {
+                cloneCap: number
+                deleteCap: number
+                suspendCap: number
+                maxQueue: number
+                maxHoldMs: number
+                taskPollMs: number
+                taskTimeoutMs: number
+                opsRingMax: number
+                sessionTtlHours: number
+                publicWsUrl: string
+                appPriority: {
+                  [key: string]: number
+                }
+                reserved: [number, number][]
+                linkedVlanRange: null | [number, number]
+              }
+            }
+          }
+        }
+      }
+    }
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/tasks/stop': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    post: {
+      parameters: {
+        query?: never
+        header?: never
+        path?: never
+        cookie?: never
+      }
+      requestBody: {
+        content: {
+          'application/json': {
+            upid: string
+          }
+        }
+      }
+      responses: {
+        /** @description Default Response */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': {
+              upid: string
+              node: string
+              stopped: boolean
+            }
+          }
+        }
+        /** @description Default Response */
+        400: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': {
+              message: string
+            }
+          }
+        }
+        /** @description Default Response */
+        502: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': {
+              message: string
+            }
+          }
+        }
+      }
+    }
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/inventory': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get: {
+      parameters: {
+        query?: never
+        header?: never
+        path?: never
+        cookie?: never
+      }
+      requestBody?: never
+      responses: {
+        /** @description Default Response */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': {
+              reserved: {
+                vmid: number
+                node: string
+                name: string
+                status: string
+                type: string
+                template: boolean
+                reserved: boolean
+              }[]
+              apps: {
+                name: string
+                vmidRanges: [number, number][]
+                vms: {
+                  vmid: number
+                  node: string
+                  name: string
+                  status: string
+                  type: string
+                  template: boolean
+                  reserved: boolean
+                }[]
+              }[]
+              unassigned: {
+                vmid: number
+                node: string
+                name: string
+                status: string
+                type: string
+                template: boolean
+                reserved: boolean
+              }[]
+              upstreamOk: boolean
+            }
+          }
+        }
+      }
+    }
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/leases': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get: {
+      parameters: {
+        query?: never
+        header?: never
+        path?: never
+        cookie?: never
+      }
+      requestBody?: never
+      responses: {
+        /** @description Default Response */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': {
+              leases: {
+                vlan: number
+                vmids: number[]
+                keyName: string
+                node: string
+                createdAt: number
+              }[]
+            }
+          }
+        }
+      }
+    }
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/events': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get: {
+      parameters: {
+        query?: never
+        header?: never
+        path?: never
+        cookie?: never
+      }
+      requestBody?: never
+      responses: {
+        /** @description Default Response */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content?: never
+        }
+      }
+    }
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/openapi.json': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get: {
+      parameters: {
+        query?: never
+        header?: never
+        path?: never
+        cookie?: never
+      }
+      requestBody?: never
+      responses: {
+        /** @description Default Response */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content?: never
+        }
+      }
+    }
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
 }
-export type webhooks = Record<string, never>;
+export type webhooks = Record<string, never>
 export interface components {
-    schemas: never;
-    responses: never;
-    parameters: never;
-    requestBodies: never;
-    headers: never;
-    pathItems: never;
+  schemas: never
+  responses: never
+  parameters: never
+  requestBodies: never
+  headers: never
+  pathItems: never
 }
-export type $defs = Record<string, never>;
-export type operations = Record<string, never>;
+export type $defs = Record<string, never>
+export type operations = Record<string, never>

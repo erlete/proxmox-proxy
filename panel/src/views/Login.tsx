@@ -1,6 +1,25 @@
 import { useState, type FormEvent, type ReactElement } from 'react'
-import { Waypoints } from 'lucide-react'
 import { api } from '../api'
+
+/** The gateway glyph used as the proxmox-proxy mark (not the Proxmox logo). */
+function Mark(): ReactElement {
+  return (
+    <span className="mark" aria-hidden="true">
+      <svg
+        width="20"
+        height="20"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="#fff"
+        strokeWidth="2.2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      >
+        <path d="M3 8h13l-3-3M21 16H8l3 3" />
+      </svg>
+    </span>
+  )
+}
 
 export function Login({ onSuccess }: { onSuccess: () => void }): ReactElement {
   const [username, setUsername] = useState('')
@@ -21,16 +40,15 @@ export function Login({ onSuccess }: { onSuccess: () => void }): ReactElement {
 
   return (
     <div className="login-wrap">
+      <div className="login-brand-top">
+        <Mark />
+        <span className="name">
+          proxmox<b>-proxy</b>
+        </span>
+      </div>
       <form className="login-card" onSubmit={(e) => void submit(e)}>
-        <div className="login-brand">
-          <Waypoints size={40} strokeWidth={2} className="brand-icon" />
-          <div>
-            <div className="login-title">proxmox-proxy</div>
-            <div className="muted">cluster control plane</div>
-          </div>
-        </div>
         <label>
-          Username
+          User
           <input
             value={username}
             onChange={(e) => setUsername(e.target.value)}
@@ -48,9 +66,11 @@ export function Login({ onSuccess }: { onSuccess: () => void }): ReactElement {
           />
         </label>
         {error && <div className="error">{error}</div>}
-        <button className="btn primary" disabled={busy || !username || !password}>
-          {busy ? 'Signing in' : 'Sign in'}
-        </button>
+        <div className="login-actions">
+          <button className="btn primary" disabled={busy || !username || !password}>
+            {busy ? 'Signing in' : 'Login'}
+          </button>
+        </div>
       </form>
     </div>
   )

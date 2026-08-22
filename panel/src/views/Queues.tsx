@@ -49,7 +49,7 @@ function StopButton({ upid }: { upid: string }): ReactElement {
   )
 }
 
-export function Queues(): ReactElement {
+export function Queues({ filterKey }: { filterKey?: string } = {}): ReactElement {
   const { queues, connected } = useLive()
   const [, forceTick] = useState(0)
 
@@ -63,13 +63,20 @@ export function Queues(): ReactElement {
   return (
     <div>
       <h1>
-        Queues
+        {filterKey ? `${filterKey} · Queues` : 'Queues'}
         <span
           className={connected ? 'live-dot on' : 'live-dot'}
           title={connected ? 'live' : 'reconnecting'}
         />
       </h1>
-      {queues.classes.map((cls) => {
+      {queues.classes.map((base) => {
+        const cls = filterKey
+          ? {
+              ...base,
+              running: base.running.filter((r) => r.keyName === filterKey),
+              waiting: base.waiting.filter((w) => w.keyName === filterKey),
+            }
+          : base
         const pct = cls.cap > 0 ? Math.min(100, (cls.running.length / cls.cap) * 100) : 100
         return (
           <section className="card queue-class" key={cls.name}>

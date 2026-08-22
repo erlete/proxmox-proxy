@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
 import type { paths } from './api/schema'
 
-export type QueuesSnapshot = paths['/api/queues']['get']['responses'][200]['content']['application/json']
+export type QueuesSnapshot =
+  paths['/api/queues']['get']['responses'][200]['content']['application/json']
 
 /**
  * One shared EventSource for the whole panel: sidebar badge, overview meters

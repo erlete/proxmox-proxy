@@ -14,14 +14,26 @@ function statusBadge(row: Row): ReactElement {
 
 function methodChip(method: string): ReactElement {
   const cls =
-    method === 'GET' ? 'chip' : method === 'DELETE' ? 'chip err' : method === 'POST' ? 'chip accent' : 'chip warn'
+    method === 'GET'
+      ? 'chip'
+      : method === 'DELETE'
+        ? 'chip err'
+        : method === 'POST'
+          ? 'chip accent'
+          : 'chip warn'
   return <span className={cls}>{method}</span>
 }
 
-export function Operations(): ReactElement {
+export function Operations({
+  initialKey = '',
+  lockKey = false,
+}: {
+  initialKey?: string
+  lockKey?: boolean
+} = {}): ReactElement {
   const [rows, setRows] = useState<Row[]>([])
   const [opClass, setOpClass] = useState('')
-  const [key, setKey] = useState('')
+  const [key, setKey] = useState(initialKey)
   const [auto, setAuto] = useState(true)
 
   const load = useCallback(async (): Promise<void> => {
@@ -46,7 +58,7 @@ export function Operations(): ReactElement {
 
   return (
     <div>
-      <h1>Operations</h1>
+      <h1>{lockKey && initialKey ? `${initialKey} · Operations` : 'Operations'}</h1>
       <div className="toolbar">
         <select value={opClass} onChange={(e) => setOpClass(e.target.value)}>
           <option value="">all classes</option>
@@ -54,7 +66,9 @@ export function Operations(): ReactElement {
           <option value="delete">delete</option>
           <option value="suspend">suspend</option>
         </select>
-        <input placeholder="filter by app" value={key} onChange={(e) => setKey(e.target.value)} />
+        {!lockKey && (
+          <input placeholder="filter by app" value={key} onChange={(e) => setKey(e.target.value)} />
+        )}
         <label className="check">
           <input type="checkbox" checked={auto} onChange={(e) => setAuto(e.target.checked)} />
           auto-refresh
