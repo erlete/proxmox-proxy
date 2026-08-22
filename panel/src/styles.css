@@ -719,6 +719,43 @@ select:focus {
   color: var(--text-muted);
 }
 
+/* ---- priority editor ---- */
+
+.priority-list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 6px 0 12px;
+}
+
+.priority-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 10px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.priority-actions {
+  margin-left: auto;
+  display: flex;
+  gap: 6px;
+}
+
+.priority-add {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.priority-add input {
+  max-width: 220px;
+}
+
 /* ---- modal ---- */
 
 .modal-backdrop {
