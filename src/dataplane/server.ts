@@ -21,7 +21,9 @@ import type { HealthMonitor } from '../upstream/health.js'
 import { UpstreamError, type Upstream } from '../upstream/client.js'
 import type { IdAllocator } from './allocator.js'
 import {
+  GROUP_ACTIONS,
   LinkedCloneError,
+  type GroupAction,
   type LinkedCloneRequest,
   type LinkedCloneService,
 } from './linkedclone.js'
@@ -560,6 +562,115 @@ export function createDataPlaneHandler(deps: DataPlaneDeps): RequestListener {
     }
   }
 
+  /** Map a group-op failure to the right response and return {status, note} for
+   * the ops log. Surfaces admission back-pressure as a retryable 429 (not 502)
+   * and sends no body when the client is already gone. */
+  function groupError(res: ServerResponse, err: unknown): { status: number | null; note: string } {
+    if (err instanceof QueueFullError || err instanceof HoldTimeoutError) {
+      res.setHeader('retry-after', String(err.retryAfterSec))
+      sendJson(res, 429, { message: `cluster busy, retry in ${err.retryAfterSec}s` })
+      return { status: 429, note: err instanceof QueueFullError ? 'queue-full' : 'hold-timeout' }
+    }
+    if (err instanceof ClientGoneError) return { status: null, note: 'client-gone' }
+    const status = err instanceof LinkedCloneError ? err.status : 502
+    if (status === 499) return { status: null, note: 'client-gone' }
+    const message = err instanceof LinkedCloneError ? err.message : 'group operation failed'
+    sendJson(res, status, { message })
+    return { status, note: 'group-op-error' }
+  }
+
+  /** A group is the unit of operation: one call destroys every member and frees
+   * the VLAN, addressed by the tag the group was created with. */
+  async function handleGroupDestroy(
+    req: IncomingMessage,
+    res: ServerResponse,
+    key: ApiKeyRecord,
+    vlan: number,
+  ): Promise<void> {
+    const started = Date.now()
+    const abort = new AbortController()
+    res.on('close', () => {
+      if (!res.writableEnded) abort.abort()
+    })
+    const path = `/proxy/linked-clone/${vlan}`
+    try {
+      const result = await linkedClone.destroyGroup(key, vlan, abort.signal)
+      sendJson(res, 200, result)
+      ops.record({
+        keyName: key.name,
+        method: 'DELETE',
+        path,
+        opClass: 'delete',
+        vmid: null,
+        status: 200,
+        queueMs: null,
+        durationMs: Date.now() - started,
+        upid: null,
+        note: `group-destroy n=${result.destroyed.length}`,
+      })
+    } catch (err) {
+      const { status, note } = groupError(res, err)
+      ops.record({
+        keyName: key.name,
+        method: 'DELETE',
+        path,
+        opClass: 'delete',
+        vmid: null,
+        status,
+        queueMs: null,
+        durationMs: Date.now() - started,
+        upid: null,
+        note,
+      })
+    }
+  }
+
+  /** One power action applied to every member of a group. */
+  async function handleGroupPower(
+    req: IncomingMessage,
+    res: ServerResponse,
+    key: ApiKeyRecord,
+    vlan: number,
+    action: GroupAction,
+  ): Promise<void> {
+    const started = Date.now()
+    const abort = new AbortController()
+    res.on('close', () => {
+      if (!res.writableEnded) abort.abort()
+    })
+    const path = `/proxy/linked-clone/${vlan}/${action}`
+    try {
+      const result = await linkedClone.groupPower(key, vlan, action, abort.signal)
+      sendJson(res, 200, result)
+      ops.record({
+        keyName: key.name,
+        method: 'POST',
+        path,
+        opClass: action === 'suspend' ? 'suspend' : null,
+        vmid: null,
+        status: 200,
+        queueMs: null,
+        durationMs: Date.now() - started,
+        upid: null,
+        note: `group-${action} ok=${result.members.filter((m) => m.ok).length}/${result.members.length}`,
+      })
+    } catch (err) {
+      const { status, note } = groupError(res, err)
+      ops.record({
+        keyName: key.name,
+        method: 'POST',
+        path,
+        opClass: action === 'suspend' ? 'suspend' : null,
+        vmid: null,
+        status,
+        queueMs: null,
+        durationMs: Date.now() - started,
+        upid: null,
+        note,
+      })
+    }
+  }
+
   async function handlePass(
     req: IncomingMessage,
     res: ServerResponse,
@@ -738,10 +849,14 @@ export function createDataPlaneHandler(deps: DataPlaneDeps): RequestListener {
         return
       }
 
+      // /proxy/linked-clone/{vlan} (DELETE = destroy group) and
+      // /proxy/linked-clone/{vlan}/{action} (POST = group power op).
+      const groupPath = /^\/proxy\/linked-clone\/(\d+)(?:\/([a-z]+))?$/.exec(url.pathname)
       const isNative =
         url.pathname === '/proxy/whoami' ||
         url.pathname === '/proxy/console-session' ||
-        url.pathname === '/proxy/linked-clone'
+        url.pathname === '/proxy/linked-clone' ||
+        groupPath != null
       if (!url.pathname.startsWith('/api2/') && !isNative) {
         sendJson(res, 404, { message: 'not found' })
         return
@@ -784,12 +899,53 @@ export function createDataPlaneHandler(deps: DataPlaneDeps): RequestListener {
         return
       }
 
+      // Native state mutations (create / power / destroy a group) mutate the
+      // cluster, so they obey the same fail-closed rule as /api2 heavy ops: when
+      // we have lost the singleton lock a rival proxy owns coordination and we
+      // must not act. whoami/health/console-session are reads and stay exempt.
+      if ((url.pathname === '/proxy/linked-clone' || groupPath != null) && !deps.singletonHeld()) {
+        res.setHeader('retry-after', '10')
+        sendJson(res, 503, { message: 'proxy is not the current cluster authority' })
+        ops.record({
+          keyName: key.name,
+          method: req.method ?? '',
+          path: url.pathname,
+          opClass: null,
+          vmid: null,
+          status: 503,
+          queueMs: null,
+          durationMs: null,
+          upid: null,
+          note: 'not-authority',
+        })
+        return
+      }
+
       if (url.pathname === '/proxy/linked-clone') {
         if (req.method !== 'POST') {
           sendJson(res, 405, { message: 'method not allowed' })
           return
         }
         await handleLinkedClone(req, res, key)
+        return
+      }
+
+      if (groupPath) {
+        const vlan = Number(groupPath[1])
+        const action = groupPath[2]
+        if (req.method === 'DELETE' && !action) {
+          await handleGroupDestroy(req, res, key, vlan)
+          return
+        }
+        if (req.method === 'POST' && action) {
+          if (!GROUP_ACTIONS.includes(action as GroupAction)) {
+            sendJson(res, 400, { message: `unknown group action: ${action}` })
+            return
+          }
+          await handleGroupPower(req, res, key, vlan, action as GroupAction)
+          return
+        }
+        sendJson(res, 405, { message: 'method not allowed' })
         return
       }
 

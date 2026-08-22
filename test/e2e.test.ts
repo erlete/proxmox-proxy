@@ -26,6 +26,10 @@ let poolComment: string | null = null
 let autoCompleteTasks = false
 const putConfigs: { vmid: number; net0: string }[] = []
 const deletedVms = new Set<number>()
+// VMIDs the fixture has "cloned" into existence, so group ops can act on them.
+const createdVms = new Set<number>()
+// Records POST /status/{action} calls the proxy forwarded for group power ops.
+const powerCalls: { vmid: number; action: string }[] = []
 
 function fakeUpstream(): Server {
   return createServer((req, res) => {
@@ -59,6 +63,13 @@ function fakeUpstream(): Server {
             },
             { vmid: 1100100, node: 'n1', name: 'app-vm', status: 'running', type: 'qemu' },
             { vmid: 4242, node: 'n1', name: 'stray-vm', status: 'stopped', type: 'qemu' },
+            ...[...createdVms].map((vmid) => ({
+              vmid,
+              node: 'n1',
+              name: `pod-${vmid}`,
+              status: 'running',
+              type: 'qemu',
+            })),
           ].filter((vm) => !deletedVms.has(vm.vmid)),
         )
       }
@@ -135,8 +146,16 @@ function fakeUpstream(): Server {
         // A real qmclone UPID carries the NEW vmid, which is how the app learns
         // the id the proxy assigned.
         const newid = new URLSearchParams(Buffer.concat(chunks).toString()).get('newid') ?? clone[1]
+        createdVms.add(Number(newid))
         const upid = `UPID:n1:0000${cloneCount}:0:0:qmclone:${newid}:root@pam:`
         return json(200, upid)
+      }
+
+      // Power ops (start/stop/shutdown/reset/suspend) for group operations.
+      const power = /^\/api2\/json\/nodes\/n1\/qemu\/(\d+)\/status\/(\w+)$/.exec(p)
+      if (power && req.method === 'POST' && power[2] !== 'current') {
+        powerCalls.push({ vmid: Number(power[1]), action: power[2] })
+        return json(200, `UPID:n1:00p${cloneCount}:0:0:qm${power[2]}:${power[1]}:root@pam:`)
       }
 
       // VM config read/write (linked-clone reads net0, then retags it).
@@ -460,6 +479,7 @@ test('openapi document is served', async () => {
 })
 
 test('per-app inventory groups cluster VMs by key ranges', async () => {
+  createdVms.clear() // assert against the base fixture, not clones from earlier tests
   const res = await fetch(`${adminUrl}/api/inventory`, { headers: { cookie } })
   assert.equal(res.status, 200)
   const body = (await res.json()) as {
@@ -586,6 +606,7 @@ test('purge removes a revoked key record; active keys are protected', async () =
 })
 
 test('opacity: cluster list reads are filtered to the key ranges', async () => {
+  createdVms.clear() // assert against the base fixture, not clones from earlier tests
   const resources = await fetch(`${dataUrl}/api2/json/cluster/resources?type=vm`, {
     headers: { authorization: appToken },
   })
@@ -707,6 +728,102 @@ test('linked clone: a group is cloned onto one leased VLAN, already configured',
       [...lease!.vmids].sort((a, b) => a - b),
       [...vmids].sort((a, b) => a - b),
     )
+  } finally {
+    autoCompleteTasks = false
+    await fetch(`${adminUrl}/api/settings`, {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json', cookie },
+      body: JSON.stringify({ linkedVlanRange: null }),
+    })
+  }
+})
+
+test('group ops: one call powers and destroys the whole linked group', async () => {
+  await fetch(`${adminUrl}/api/settings`, {
+    method: 'PUT',
+    headers: { 'content-type': 'application/json', cookie },
+    body: JSON.stringify({ linkedVlanRange: [1000, 1099] }),
+  })
+  autoCompleteTasks = true
+  powerCalls.length = 0
+  try {
+    const created = await fetch(`${dataUrl}/proxy/linked-clone`, {
+      method: 'POST',
+      headers: { authorization: appToken, 'content-type': 'application/json' },
+      body: JSON.stringify({ node: 'n1', clones: [{ template: 1100001 }, { template: 1100001 }] }),
+    })
+    assert.equal(created.status, 200)
+    const grp = (await created.json()) as { vlan: number; clones: { vmid: number }[] }
+    const vmids = grp.clones.map((c) => c.vmid).sort((a, b) => a - b)
+
+    // Unknown action -> 400; unknown group -> 404.
+    const badAction = await fetch(`${dataUrl}/proxy/linked-clone/${grp.vlan}/frobnicate`, {
+      method: 'POST',
+      headers: { authorization: appToken },
+    })
+    assert.equal(badAction.status, 400)
+    const noGroup = await fetch(`${dataUrl}/proxy/linked-clone/9999`, {
+      method: 'DELETE',
+      headers: { authorization: appToken },
+    })
+    assert.equal(noGroup.status, 404)
+
+    // Ownership: another key cannot touch this group, even knowing its vlan.
+    const otherKey = (await (
+      await fetch(`${adminUrl}/api/keys`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', cookie },
+        body: JSON.stringify({ name: 'app-two', vmidRanges: [[1500000, 1500099]] }),
+      })
+    ).json()) as { token: string }
+    const foreignDestroy = await fetch(`${dataUrl}/proxy/linked-clone/${grp.vlan}`, {
+      method: 'DELETE',
+      headers: { authorization: otherKey.token },
+    })
+    assert.equal(foreignDestroy.status, 403)
+    const foreignPower = await fetch(`${dataUrl}/proxy/linked-clone/${grp.vlan}/stop`, {
+      method: 'POST',
+      headers: { authorization: otherKey.token },
+    })
+    assert.equal(foreignPower.status, 403)
+
+    // A bad method on a group path is 405, not a misroute.
+    const badMethod = await fetch(`${dataUrl}/proxy/linked-clone/${grp.vlan}`, {
+      method: 'PUT',
+      headers: { authorization: appToken },
+    })
+    assert.equal(badMethod.status, 405)
+
+    // One call stops every member.
+    const stop = await fetch(`${dataUrl}/proxy/linked-clone/${grp.vlan}/stop`, {
+      method: 'POST',
+      headers: { authorization: appToken },
+    })
+    assert.equal(stop.status, 200)
+    const stopBody = (await stop.json()) as { members: { vmid: number; ok: boolean }[] }
+    assert.ok(stopBody.members.every((m) => m.ok))
+    const stopped = powerCalls
+      .filter((c) => c.action === 'stop')
+      .map((c) => c.vmid)
+      .sort((a, b) => a - b)
+    assert.deepEqual(stopped, vmids)
+
+    // One call destroys every member and frees the VLAN.
+    const destroy = await fetch(`${dataUrl}/proxy/linked-clone/${grp.vlan}`, {
+      method: 'DELETE',
+      headers: { authorization: appToken },
+    })
+    assert.equal(destroy.status, 200)
+    const dBody = (await destroy.json()) as { destroyed: number[] }
+    assert.deepEqual(
+      [...dBody.destroyed].sort((a, b) => a - b),
+      vmids,
+    )
+    assert.ok(vmids.every((v) => deletedVms.has(v)))
+
+    const leases = await fetch(`${adminUrl}/api/leases`, { headers: { cookie } })
+    const lBody = (await leases.json()) as { leases: { vlan: number }[] }
+    assert.ok(!lBody.leases.some((l) => l.vlan === grp.vlan), 'lease freed after destroy')
   } finally {
     autoCompleteTasks = false
     await fetch(`${adminUrl}/api/settings`, {

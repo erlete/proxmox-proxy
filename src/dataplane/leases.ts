@@ -43,6 +43,21 @@ export class VlanLeaseStore {
     }))
   }
 
+  /** The lease on a given VLAN, or null: the group record for that tag. */
+  get(vlan: number): VlanLease | null {
+    const r = this.db
+      .prepare('SELECT vlan, vmids, key_name, node, created_at FROM vlan_leases WHERE vlan = ?')
+      .get(vlan) as Record<string, unknown> | undefined
+    if (!r) return null
+    return {
+      vlan: Number(r.vlan),
+      vmids: JSON.parse(String(r.vmids)) as number[],
+      keyName: String(r.key_name),
+      node: String(r.node),
+      createdAt: Number(r.created_at),
+    }
+  }
+
   /** Tags currently leased: the occupied set within the linked-VLAN range. */
   activeVlans(): Set<number> {
     const rows = this.db.prepare('SELECT vlan FROM vlan_leases').all() as { vlan: number }[]

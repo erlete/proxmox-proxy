@@ -5,7 +5,7 @@ import type { SettingsStore } from '../settings.js'
 import type { ClusterSnapshot } from '../upstream/cluster.js'
 import { UpstreamError, type Upstream } from '../upstream/client.js'
 import { IdAllocator, VlanAllocator } from './allocator.js'
-import { VlanLeaseStore } from './leases.js'
+import { VlanLeaseStore, type VlanLease } from './leases.js'
 
 const MAX_GROUP = 16
 
@@ -29,6 +29,29 @@ export interface LinkedCloneRequest {
 export interface LinkedCloneResult {
   vlan: number
   clones: Array<{ template: number; vmid: number; upid: string }>
+}
+
+/** Power actions a whole group accepts in one call. `start` also resumes a
+ * pod that was suspended to disk. */
+export type GroupAction = 'start' | 'stop' | 'shutdown' | 'reset' | 'suspend'
+export const GROUP_ACTIONS: readonly GroupAction[] = [
+  'start',
+  'stop',
+  'shutdown',
+  'reset',
+  'suspend',
+]
+
+export interface GroupDestroyResult {
+  vlan: number
+  destroyed: number[]
+}
+
+export interface GroupPowerResult {
+  vlan: number
+  node: string
+  action: GroupAction
+  members: Array<{ vmid: number; ok: boolean; upid: string | null; error?: string }>
 }
 
 interface TaskStatus {
@@ -259,6 +282,167 @@ export class LinkedCloneService {
       vmids: created.map((c) => c.vmid),
     })
     return { vlan, clones: created }
+  }
+
+  /** Resolve a group by its VLAN and assert the key owns it. A group is the
+   * unit of operation: it is addressed by the VLAN tag returned at creation. */
+  private resolveGroup(key: ApiKeyRecord, vlan: number): VlanLease {
+    const lease = this.deps.leases.get(vlan)
+    if (!lease) throw new LinkedCloneError(`no group is leased on vlan ${vlan}`, 404)
+    if (lease.keyName !== key.name) {
+      throw new LinkedCloneError(`vlan ${vlan} belongs to another app`, 403)
+    }
+    for (const vmid of lease.vmids) {
+      if (!vmidAllowed(key.vmidRanges, vmid)) {
+        throw new LinkedCloneError(`group member ${vmid} is outside the ranges of this key`, 403)
+      }
+    }
+    return lease
+  }
+
+  /**
+   * Destroy every member of a group in one call and free its VLAN. Idempotent:
+   * a member already gone is treated as done. The lease (and thus the VLAN) is
+   * released only when the whole pod is confirmed gone; a partial failure keeps
+   * it so a retry finishes the job.
+   */
+  async destroyGroup(
+    key: ApiKeyRecord,
+    vlan: number,
+    signal: AbortSignal,
+  ): Promise<GroupDestroyResult> {
+    const { admission, cluster, ids, leases, upstream } = this.deps
+    const lease = this.resolveGroup(key, vlan)
+    // A FRESH snapshot (never the 5s cache) so a member cannot be mistaken for
+    // gone from a stale read. An empty snapshot is a transient cluster fault
+    // (quorum loss returns [] with a 200), NOT "everything was deleted": refuse
+    // to act, because freeing this VLAN with members still alive would let it be
+    // re-leased to another tenant (an isolation breach), the very thing the
+    // lease exists to prevent.
+    const snapshot = await cluster.vms(true)
+    if (snapshot.length === 0) {
+      throw new LinkedCloneError('cannot verify the cluster right now, retry shortly', 503)
+    }
+    const byId = new Map(snapshot.map((vm) => [vm.vmid, vm]))
+    const node = encodeURIComponent(lease.node)
+    const destroyed: number[] = []
+    const failed: number[] = []
+    for (const vmid of lease.vmids) {
+      if (signal.aborted) throw new LinkedCloneError('client disconnected', 499)
+      const vm = byId.get(vmid)
+      if (!vm) {
+        destroyed.push(vmid) // absent from a fresh, non-empty snapshot: gone
+        ids.release(vmid)
+        continue
+      }
+      if (vm.template) {
+        // A template must never be destroyed. It cannot legitimately be a group
+        // member; skip it (never delete a golden image) but do NOT let it block
+        // freeing the VLAN, or the lease would leak forever.
+        log.warn('group destroy skipped a template member', { vlan, vmid })
+        continue
+      }
+      const grant = await admission.acquire(
+        { opClass: 'delete', keyName: key.name, vmid, node: lease.node },
+        signal,
+      )
+      try {
+        // Destroy means we do not care about the running state: a running VM
+        // cannot be deleted, so force-stop it first (idempotent, one pass).
+        if (vm.status === 'running') {
+          await this.waitTask(
+            lease.node,
+            await upstream.api<string>('POST', `/nodes/${node}/qemu/${vmid}/status/stop`),
+            signal,
+          )
+        }
+        const upid = await upstream.api<string>('DELETE', `/nodes/${node}/qemu/${vmid}`)
+        await this.waitTask(lease.node, upid, signal)
+        destroyed.push(vmid)
+        ids.release(vmid)
+      } catch (err) {
+        if (err instanceof LinkedCloneError && err.status === 499) throw err
+        log.warn('group destroy member failed', { vlan, vmid, error: String(err) })
+        failed.push(vmid)
+      } finally {
+        grant.release('group-destroy')
+      }
+    }
+    cluster.invalidate()
+    if (failed.length > 0) {
+      // Keep the lease so a retry can finish; the VLAN stays reserved.
+      throw new LinkedCloneError(
+        `group on vlan ${vlan}: ${failed.length} member(s) could not be destroyed`,
+        502,
+      )
+    }
+    leases.remove(vlan) // whole pod gone: free the VLAN
+    log.info('group destroyed', { key: key.name, vlan, destroyed })
+    return { vlan, destroyed }
+  }
+
+  /** Apply one power action to every member of a group in a single call. */
+  async groupPower(
+    key: ApiKeyRecord,
+    vlan: number,
+    action: GroupAction,
+    signal: AbortSignal,
+  ): Promise<GroupPowerResult> {
+    const { cluster } = this.deps
+    const lease = this.resolveGroup(key, vlan)
+    const byId = new Map((await cluster.vms()).map((vm) => [vm.vmid, vm]))
+    const members: GroupPowerResult['members'] = []
+    for (const vmid of lease.vmids) {
+      if (signal.aborted) throw new LinkedCloneError('client disconnected', 499)
+      const vm = byId.get(vmid)
+      if (!vm) {
+        members.push({ vmid, ok: false, upid: null, error: 'not found' })
+        continue
+      }
+      if (vm.template) {
+        members.push({ vmid, ok: false, upid: null, error: 'template' })
+        continue
+      }
+      try {
+        const upid = await this.powerOne(key, lease.node, vmid, action, signal)
+        members.push({ vmid, ok: true, upid })
+      } catch (err) {
+        if (err instanceof LinkedCloneError && err.status === 499) throw err
+        const error = err instanceof LinkedCloneError ? err.message : 'operation failed'
+        members.push({ vmid, ok: false, upid: null, error })
+      }
+    }
+    cluster.invalidate()
+    return { vlan, node: lease.node, action, members }
+  }
+
+  /** One member's power op, waiting for its task; suspend takes an admission
+   * slot (it contends for pool I/O), the rest do not. */
+  private async powerOne(
+    key: ApiKeyRecord,
+    node: string,
+    vmid: number,
+    action: GroupAction,
+    signal: AbortSignal,
+  ): Promise<string> {
+    const { admission, upstream } = this.deps
+    const base = `/nodes/${encodeURIComponent(node)}/qemu/${vmid}/status`
+    if (action === 'suspend') {
+      const grant = await admission.acquire(
+        { opClass: 'suspend', keyName: key.name, vmid, node },
+        signal,
+      )
+      try {
+        const upid = await upstream.api<string>('POST', `${base}/suspend`, { todisk: 1 })
+        await this.waitTask(node, upid, signal)
+        return upid
+      } finally {
+        grant.release('group-suspend')
+      }
+    }
+    const upid = await upstream.api<string>('POST', `${base}/${action}`)
+    await this.waitTask(node, upid, signal)
+    return upid
   }
 }
 
