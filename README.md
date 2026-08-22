@@ -1,5 +1,9 @@
 # proxmox-proxy
 
+[![ci](https://github.com/DLT-Code/proxmox-proxy/actions/workflows/ci.yml/badge.svg)](https://github.com/DLT-Code/proxmox-proxy/actions/workflows/ci.yml) [![release-please](https://github.com/DLT-Code/proxmox-proxy/actions/workflows/release-please.yml/badge.svg)](https://github.com/DLT-Code/proxmox-proxy/actions/workflows/release-please.yml) [![publish](https://github.com/DLT-Code/proxmox-proxy/actions/workflows/publish.yml/badge.svg)](https://github.com/DLT-Code/proxmox-proxy/actions/workflows/publish.yml)
+
+![Dashboard del panel web](./.github/assets/panel-dashboard-page.png)
+
 **proxmox-proxy** es un punto de entrada único y neutral para varias aplicaciones que comparten
 un mismo cluster de Proxmox VE. En lugar de que cada aplicación hable directamente con Proxmox con
 credenciales de administrador, todas hablan con el proxy: él sostiene una sola cuenta de servicio
@@ -150,13 +154,13 @@ La aplicación **no** deriva sus rangos de ninguna convención propia: el rango 
 El proxy es **opaco** respecto a todo lo que no pertenezca a la clave. Una aplicación nunca ve una
 VM, plantilla o tarea de otra: las lecturas de lista se recortan a sus rangos antes de devolverse.
 
-| Lectura | Qué devuelve a través del proxy |
-| --- | --- |
-| `GET /api2/json/cluster/resources` | Solo las VMs cuyo VMID cae en los rangos de la clave, más las filas de infraestructura sin VMID (nodos, almacenamiento). |
-| `GET /api2/json/nodes/{node}/qemu` y `.../lxc` | Solo los guests en rango. |
-| `GET /api2/json/nodes/{node}/tasks` | Solo las tareas cuyo VMID está en rango. |
-| `GET /api2/json/nodes/{node}/storage/{s}/content` | Solo los volúmenes de VMs en rango (más ISOs y plantillas compartidas). |
-| `GET .../qemu/{vmid}/...` (lectura concreta) | 200 si el VMID está en rango; 403 si está fuera. |
+| Lectura                                           | Qué devuelve a través del proxy                                                                                          |
+| ------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| `GET /api2/json/cluster/resources`                | Solo las VMs cuyo VMID cae en los rangos de la clave, más las filas de infraestructura sin VMID (nodos, almacenamiento). |
+| `GET /api2/json/nodes/{node}/qemu` y `.../lxc`    | Solo los guests en rango.                                                                                                |
+| `GET /api2/json/nodes/{node}/tasks`               | Solo las tareas cuyo VMID está en rango.                                                                                 |
+| `GET /api2/json/nodes/{node}/storage/{s}/content` | Solo los volúmenes de VMs en rango (más ISOs y plantillas compartidas).                                                  |
+| `GET .../qemu/{vmid}/...` (lectura concreta)      | 200 si el VMID está en rango; 403 si está fuera.                                                                         |
 
 En consecuencia, una aplicación **no debe intentar descubrir ni contabilizar recursos ajenos**: no
 los verá. Todo lo suyo (sus VMs, sus plantillas, sus tareas) lo ve ya recortado a lo suyo.
@@ -297,14 +301,14 @@ debe estar en rango.
 Las operaciones pesadas (clone, delete, suspend) pasan por control de admisión. El slot se retiene
 hasta que la **tarea** de Proxmox termina, no hasta que responde el HTTP.
 
-| Código | Significado | Qué debe hacer la aplicación |
-| --- | --- | --- |
-| `200` | OK. En operaciones pesadas, el cuerpo trae el UPID de la tarea. | Seguir la tarea por su UPID si necesita el resultado. |
-| `403` | Fuera de rango, plantilla protegida, o endpoint de identidad. | No reintentar: es un límite duro. |
-| `429` | Cola llena o sin slot dentro del presupuesto de espera. Trae `Retry-After`. | Reintentar tras `Retry-After`. |
-| `503` | Admisión no disponible, o el proxy no es ahora mismo la autoridad del cluster. Trae `Retry-After`. | Reintentar tras `Retry-After`. |
-| `507` | Rango de VMID de la clave agotado. | Sin ids libres: es un problema de capacidad o configuración. |
-| `502` | El cluster falló aguas arriba. | Reintentar con backoff. |
+| Código | Significado                                                                                        | Qué debe hacer la aplicación                                 |
+| ------ | -------------------------------------------------------------------------------------------------- | ------------------------------------------------------------ |
+| `200`  | OK. En operaciones pesadas, el cuerpo trae el UPID de la tarea.                                    | Seguir la tarea por su UPID si necesita el resultado.        |
+| `403`  | Fuera de rango, plantilla protegida, o endpoint de identidad.                                      | No reintentar: es un límite duro.                            |
+| `429`  | Cola llena o sin slot dentro del presupuesto de espera. Trae `Retry-After`.                        | Reintentar tras `Retry-After`.                               |
+| `503`  | Admisión no disponible, o el proxy no es ahora mismo la autoridad del cluster. Trae `Retry-After`. | Reintentar tras `Retry-After`.                               |
+| `507`  | Rango de VMID de la clave agotado.                                                                 | Sin ids libres: es un problema de capacidad o configuración. |
+| `502`  | El cluster falló aguas arriba.                                                                     | Reintentar con backoff.                                      |
 
 Regla general: 429 y 503 son **transitorios con reintento** (respeta `Retry-After`); 403 y 507 son
 **definitivos**.
