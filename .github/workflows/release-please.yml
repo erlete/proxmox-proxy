@@ -32,9 +32,20 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.RELEASE_PLEASE_PAT }}
           REPO: ${{ github.repository }}
+          PR_JSON: ${{ steps.release.outputs.pr }}
         run: |
-          number=$(gh pr list -R "$REPO" --state open \
-            --label "autorelease: pending" --json number --jq '.[0].number // empty')
+          # Prefer the action's own output (available immediately); fall back to
+          # a label lookup with retries, because the PR search index lags right
+          # after a PR is created and would otherwise report "none" on that run.
+          number=$(printf '%s' "$PR_JSON" | jq -r '.number // empty' 2>/dev/null || true)
+          if [ -z "$number" ]; then
+            for i in 1 2 3 4 5; do
+              number=$(gh pr list -R "$REPO" --state open \
+                --label "autorelease: pending" --json number --jq '.[0].number // empty')
+              [ -n "$number" ] && break
+              sleep 3
+            done
+          fi
           if [ -z "$number" ]; then echo "no open release PR to merge"; exit 0; fi
           echo "Merging release PR #$number"
           gh pr merge "$number" -R "$REPO" --squash --admin \
