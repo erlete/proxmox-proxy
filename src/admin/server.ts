@@ -223,6 +223,16 @@ export async function buildAdminServer(deps: AdminDeps): Promise<FastifyInstance
       if (rangesOverlap(vmidRanges as VmidRange[], settings.reservedRanges)) {
         return reply.code(400).send({ message: 'vmid ranges overlap a reserved range' })
       }
+      // A VMID belongs to exactly one app: reject ranges that overlap another
+      // live key (a revoked key is dead and does not block reuse).
+      const clashKey = keys
+        .list()
+        .find((k) => k.enabled && rangesOverlap(vmidRanges as VmidRange[], k.vmidRanges))
+      if (clashKey) {
+        return reply
+          .code(400)
+          .send({ message: `vmid ranges overlap the ranges of key "${clashKey.name}"` })
+      }
       try {
         const token = keys.create(name, vmidRanges as VmidRange[], comment ?? '')
         log.info('api key created', { name })
@@ -314,9 +324,15 @@ export async function buildAdminServer(deps: AdminDeps): Promise<FastifyInstance
       // A reserved range may never cover a VMID an app already owns: reject the
       // change here (settings has no view of keys) before it is persisted.
       if (patch.reserved !== undefined) {
+        // Only live keys block a reserved range; a revoked key is dead, so
+        // reserving its old range is not obstruction.
         const clashing = keys
           .list()
-          .find((k) => rangesOverlap(patch.reserved as VmidRange[], k.vmidRanges as VmidRange[]))
+          .find(
+            (k) =>
+              k.enabled &&
+              rangesOverlap(patch.reserved as VmidRange[], k.vmidRanges as VmidRange[]),
+          )
         if (clashing) {
           return reply.code(400).send({
             message: `reserved range overlaps the ranges of key "${clashing.name}"`,

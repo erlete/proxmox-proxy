@@ -91,7 +91,21 @@ export class SettingsStore extends EventEmitter {
     } catch {
       log.warn('stored settings unreadable, falling back to defaults')
     }
-    this.values = { ...SETTINGS_DEFAULTS, ...stored }
+    // Deep-copy the mutable defaults so a missing stored field never aliases the
+    // shared SETTINGS_DEFAULTS structures.
+    this.values = {
+      ...SETTINGS_DEFAULTS,
+      ...stored,
+      appPriority: { ...SETTINGS_DEFAULTS.appPriority, ...(stored.appPriority ?? {}) },
+      reserved: (stored.reserved ?? SETTINGS_DEFAULTS.reserved).map((r) => [...r] as VmidRange),
+      linkedVlanRange:
+        (stored.linkedVlanRange ?? SETTINGS_DEFAULTS.linkedVlanRange)
+          ? [
+              (stored.linkedVlanRange ?? SETTINGS_DEFAULTS.linkedVlanRange)![0],
+              (stored.linkedVlanRange ?? SETTINGS_DEFAULTS.linkedVlanRange)![1],
+            ]
+          : null,
+    }
   }
 
   /**

@@ -26,6 +26,7 @@ interface RawClusterVm {
  */
 export class ClusterSnapshot {
   private cache: { at: number; vms: ClusterVm[] } | null = null
+  private inflight: Promise<ClusterVm[]> | null = null
 
   constructor(
     private upstream: Upstream,
@@ -34,6 +35,16 @@ export class ClusterSnapshot {
 
   async vms(force = false): Promise<ClusterVm[]> {
     if (!force && this.cache && Date.now() - this.cache.at < this.ttlMs) return this.cache.vms
+    // Single-flight: concurrent callers after an invalidate share one fetch
+    // instead of each hitting /cluster/resources.
+    if (this.inflight) return this.inflight
+    this.inflight = this.fetch().finally(() => {
+      this.inflight = null
+    })
+    return this.inflight
+  }
+
+  private async fetch(): Promise<ClusterVm[]> {
     const rows = await this.upstream.api<RawClusterVm[]>('GET', '/cluster/resources?type=vm')
     const vms: ClusterVm[] = rows.map((r) => ({
       vmid: r.vmid,

@@ -72,6 +72,15 @@ function fakeUpstream(): Server {
         ])
       }
 
+      // Storage content (filtered to the key's range by the proxy).
+      if (p === '/api2/json/nodes/n1/storage/local/content' && req.method === 'GET') {
+        return json(200, [
+          { volid: 'local:iso/ubuntu.iso', content: 'iso' }, // no vmid: infra
+          { volid: 'local:1100100/vm-1100100-disk-0', content: 'images', vmid: 1100100 },
+          { volid: 'local:4242/vm-4242-disk-0', content: 'images', vmid: 4242 },
+        ])
+      }
+
       // Task list on the node (filtered to the key's range by the proxy).
       if (p === '/api2/json/nodes/n1/tasks' && req.method === 'GET') {
         return json(200, [
@@ -546,7 +555,7 @@ test('purge removes a revoked key record; active keys are protected', async () =
   const mk = await fetch(`${adminUrl}/api/keys`, {
     method: 'POST',
     headers: { 'content-type': 'application/json', cookie },
-    body: JSON.stringify({ name: 'app-z', vmidRanges: [[1100000, 1100999]] }),
+    body: JSON.stringify({ name: 'app-z', vmidRanges: [[1400000, 1400999]] }),
   })
   assert.equal(mk.status, 201)
 
@@ -706,6 +715,67 @@ test('linked clone: a group is cloned onto one leased VLAN, already configured',
       body: JSON.stringify({ linkedVlanRange: null }),
     })
   }
+})
+
+test('opacity: a percent-encoded foreign VMID cannot slip past scoping', async () => {
+  // %34%32%34%32 decodes to 4242, outside app-a's range; must be denied, not
+  // forwarded verbatim to a cluster that would decode and serve it.
+  const res = await fetch(`${dataUrl}/api2/json/nodes/n1/qemu/%34%32%34%32/status/current`, {
+    headers: { authorization: appToken },
+  })
+  assert.equal(res.status, 403)
+})
+
+test('encoded path separators are rejected', async () => {
+  const res = await fetch(`${dataUrl}/api2/json/nodes/n1/qemu%2f4242/config`, {
+    headers: { authorization: appToken },
+  })
+  assert.equal(res.status, 400)
+})
+
+test('pools and nextid are denied to apps', async () => {
+  const pools = await fetch(`${dataUrl}/api2/json/pools`, { headers: { authorization: appToken } })
+  assert.equal(pools.status, 403)
+  const nextid = await fetch(`${dataUrl}/api2/json/cluster/nextid`, {
+    headers: { authorization: appToken },
+  })
+  assert.equal(nextid.status, 403)
+})
+
+test('a task not scoped to an in-range guest is denied', async () => {
+  const upid = encodeURIComponent('UPID:n1:3:0:0:aptupdate::root@pam:')
+  const res = await fetch(`${dataUrl}/api2/json/nodes/n1/tasks/${upid}/status`, {
+    headers: { authorization: appToken },
+  })
+  assert.equal(res.status, 403)
+})
+
+test('a move onto a template target is refused', async () => {
+  const res = await fetch(`${dataUrl}/api2/json/nodes/n1/qemu/1100100/move_disk`, {
+    method: 'POST',
+    headers: { authorization: appToken, 'content-type': 'application/x-www-form-urlencoded' },
+    body: 'disk=scsi0&storage=local&target-vmid=1100001',
+  })
+  assert.equal(res.status, 403)
+})
+
+test('opacity: storage content is filtered to the key ranges', async () => {
+  const res = await fetch(`${dataUrl}/api2/json/nodes/n1/storage/local/content`, {
+    headers: { authorization: appToken },
+  })
+  assert.equal(res.status, 200)
+  const body = (await res.json()) as { data: { volid: string; vmid?: number }[] }
+  const vmids = body.data.map((v) => v.vmid).filter((v): v is number => v != null)
+  assert.deepEqual(vmids, [1100100]) // foreign 4242 dropped
+  assert.ok(body.data.some((v) => v.volid.includes('iso'))) // vmid-less infra kept
+})
+
+test('/proxy/health does not disclose the upstream version', async () => {
+  const res = await fetch(`${dataUrl}/proxy/health`)
+  assert.equal(res.status, 200)
+  const body = (await res.json()) as Record<string, unknown>
+  assert.equal('upstream' in body, false)
+  assert.ok('status' in body)
 })
 
 // Must run last: it shuts the app down. Regression test for the deploy bug

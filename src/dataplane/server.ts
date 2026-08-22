@@ -57,6 +57,9 @@ const REQ_STRIP = new Set([
 const RESP_STRIP = new Set(['connection', 'keep-alive', 'transfer-encoding', 'upgrade', 'trailer'])
 
 const MAX_HEAVY_BODY = 1024 * 1024
+// A filtered read must buffer the upstream response to trim it; cap it so a
+// hostile `?limit=huge` cannot force an unbounded allocation.
+const MAX_FILTERED_BODY = 16 * 1024 * 1024
 
 const READ_METHODS = new Set(['GET', 'HEAD', 'OPTIONS'])
 
@@ -106,6 +109,24 @@ function readBody(req: IncomingMessage, limit: number): Promise<Buffer> {
     req.on('end', () => resolve(Buffer.concat(chunks)))
     req.on('error', reject)
   })
+}
+
+/** Read an upstream response body up to `limit` bytes; null if it exceeds it. */
+async function readCappedBody(
+  body: AsyncIterable<Buffer> & { destroy?: () => void },
+  limit: number,
+): Promise<Buffer | null> {
+  const chunks: Buffer[] = []
+  let size = 0
+  for await (const chunk of body) {
+    size += chunk.length
+    if (size > limit) {
+      body.destroy?.()
+      return null
+    }
+    chunks.push(chunk)
+  }
+  return Buffer.concat(chunks)
 }
 
 /** Read a target VMID named in the request body (clone `newid`, move
@@ -167,40 +188,44 @@ export function createDataPlaneHandler(deps: DataPlaneDeps): RequestListener {
   } = deps
   const serviceAuth = `PVEAPIToken=${config.serviceToken}`
 
+  // /proxy/health is unauthenticated (docker healthcheck, app probes), so it
+  // discloses only liveness, never the upstream version string.
   const healthBody = (): Record<string, unknown> => ({
     status: health.state.ok && deps.singletonHeld() ? 'ok' : 'degraded',
-    upstream: {
-      ok: health.state.ok,
-      version: health.state.version,
-      checkedAt: health.state.checkedAt,
-    },
-    singleton: { enabled: !config.singleton.disabled, held: deps.singletonHeld() },
+    upstreamOk: health.state.ok,
+    singletonHeld: deps.singletonHeld(),
   })
+
+  /** true = template, false = not, 'unknown' = the cluster could not be read. */
+  async function templateState(vmid: number): Promise<boolean | 'unknown'> {
+    try {
+      return (await cluster.byVmid(vmid))?.template === true
+    } catch {
+      return 'unknown'
+    }
+  }
 
   /**
    * Templates are read-only through the proxy: a template is never deleted and
    * never mutated (cloning FROM it is the one write allowed, handled elsewhere).
-   * Returns a 403 message to deny, or null to allow. Fails closed on DELETE if
-   * the cluster cannot be read, so a golden image is never destroyed blind.
+   * Returns a 403 message, the '__unavailable__' sentinel (503) or null (allow).
+   * Fails closed on EVERY write when the cluster cannot be read, so a golden
+   * image is never mutated or destroyed blind (a write would 502 anyway).
    */
   async function templateGuard(method: string, cls: Classified): Promise<string | null> {
     if (READ_METHODS.has(method) || cls.opClass === 'clone' || cls.pathVmid == null) return null
-    try {
-      const vm = await cluster.byVmid(cls.pathVmid)
-      if (vm?.template) {
-        return 'templates are read-only through the proxy; cloning is the only write allowed'
-      }
-      return null
-    } catch (err) {
-      if (method === 'DELETE') {
-        log.warn('template guard could not read the cluster, refusing delete', {
-          vmid: cls.pathVmid,
-          error: String(err),
-        })
-        return '__unavailable__'
-      }
-      return null
+    const state = await templateState(cls.pathVmid)
+    if (state === true) {
+      return 'templates are read-only through the proxy; cloning is the only write allowed'
     }
+    if (state === 'unknown') {
+      log.warn('template guard could not read the cluster, refusing write', {
+        vmid: cls.pathVmid,
+        method,
+      })
+      return '__unavailable__'
+    }
+    return null
   }
 
   async function handleHeavy(
@@ -253,8 +278,23 @@ export function createDataPlaneHandler(deps: DataPlaneDeps): RequestListener {
           })
           return
         }
+        try {
+          body = injectBodyVmid(body, ct, 'newid', newid)
+        } catch {
+          // A malformed body (e.g. broken JSON) must not strand the reserved id.
+          ids.release(newid)
+          sendJson(res, 400, { message: 'malformed clone request body' })
+          ops.record({
+            ...base,
+            status: 400,
+            queueMs: null,
+            durationMs: null,
+            upid: null,
+            note: 'bad-body',
+          })
+          return
+        }
         assignedNewid = newid
-        body = injectBodyVmid(body, ct, 'newid', newid)
       } else if (!vmidAllowed(key.vmidRanges, newid)) {
         sendJson(res, 403, { message: `newid ${newid} is outside the ranges of this key` })
         ops.record({
@@ -497,8 +537,10 @@ export function createDataPlaneHandler(deps: DataPlaneDeps): RequestListener {
         note: `linked-clone vlan=${result.vlan} n=${result.clones.length}`,
       })
     } catch (err) {
+      // Only our own LinkedCloneError messages are safe to return; anything else
+      // could leak upstream/internal detail, so it gets a generic message.
       const status = err instanceof LinkedCloneError ? err.status : 502
-      const message = err instanceof Error ? err.message : String(err)
+      const message = err instanceof LinkedCloneError ? err.message : 'linked clone failed'
       if (status !== 499) sendJson(res, status, { message })
       ops.record({
         keyName: key.name,
@@ -574,7 +616,11 @@ export function createDataPlaneHandler(deps: DataPlaneDeps): RequestListener {
       const headers = fwdHeaders(req, serviceAuth)
       delete headers['accept-encoding'] // keep the JSON parseable for filtering
       const r = await upstream.raw({ method, path: url.pathname + url.search, headers })
-      const respBuf = Buffer.from(await r.body.arrayBuffer())
+      const respBuf = await readCappedBody(r.body, MAX_FILTERED_BODY)
+      if (respBuf === null) {
+        sendJson(res, 502, { message: 'upstream response too large to filter' })
+        return
+      }
       let out = respBuf
       if (r.statusCode < 400) {
         try {
@@ -633,10 +679,31 @@ export function createDataPlaneHandler(deps: DataPlaneDeps): RequestListener {
       upid: null,
     }
     const target = extractBodyVmid(body, req.headers['content-type'], cls.bodyTarget!)
-    if (target != null && !vmidAllowed(key.vmidRanges, target)) {
-      sendJson(res, 403, { message: `target vmid ${target} is outside the ranges of this key` })
-      ops.record({ ...base, vmid: target, status: 403, durationMs: null, note: 'denied-target' })
-      return
+    if (target != null) {
+      if (!vmidAllowed(key.vmidRanges, target)) {
+        sendJson(res, 403, { message: `target vmid ${target} is outside the ranges of this key` })
+        ops.record({ ...base, vmid: target, status: 403, durationMs: null, note: 'denied-target' })
+        return
+      }
+      // The target VMID is in range, but a move must never land on a template
+      // (that would mutate a golden image). Same fail-closed rule as writes.
+      const ts = await templateState(target)
+      if (ts === true) {
+        sendJson(res, 403, { message: `target vmid ${target} is a template and is read-only` })
+        ops.record({
+          ...base,
+          vmid: target,
+          status: 403,
+          durationMs: null,
+          note: 'template-target',
+        })
+        return
+      }
+      if (ts === 'unknown') {
+        res.setHeader('retry-after', '5')
+        sendJson(res, 503, { message: 'cannot verify the target right now, retry shortly' })
+        return
+      }
     }
 
     try {
@@ -734,7 +801,22 @@ export function createDataPlaneHandler(deps: DataPlaneDeps): RequestListener {
       }
 
       const method = req.method ?? 'GET'
-      const cls = classify(method, url.pathname)
+      // Classify (and thus scope) on the DECODED path so a percent-encoded VMID
+      // (e.g. /qemu/%31%30%30/) cannot slip past extraction and read a foreign
+      // VM. Reject a path whose decoding changes its segment structure (an
+      // encoded slash) rather than guessing what it meant.
+      let scanPath: string
+      try {
+        scanPath = decodeURIComponent(url.pathname)
+      } catch {
+        sendJson(res, 400, { message: 'malformed path' })
+        return
+      }
+      if (scanPath.split('/').length !== url.pathname.split('/').length) {
+        sendJson(res, 400, { message: 'encoded path separators are not allowed' })
+        return
+      }
+      const cls = classify(method, scanPath)
 
       const denied = authorize(method, cls, (vmid) => vmidAllowed(key.vmidRanges, vmid))
       if (denied) {
@@ -780,28 +862,32 @@ export function createDataPlaneHandler(deps: DataPlaneDeps): RequestListener {
 
       if (cls.listScope && READ_METHODS.has(method)) {
         await handleFilteredRead(req, res, url, cls, key)
-      } else if (cls.opClass) {
-        // Fail-closed: having lost the cluster lock we are no longer the
-        // admission authority, so a contended op must not be forwarded blind
-        // (a rival proxy now owns coordination). Reads still pass through
-        // handlePass: observing the cluster is never unsafe.
-        if (!deps.singletonHeld()) {
-          res.setHeader('retry-after', '10')
-          sendJson(res, 503, { message: 'proxy is not the current cluster authority' })
-          ops.record({
-            keyName: key.name,
-            method,
-            path: url.pathname,
-            opClass: cls.opClass,
-            vmid: cls.pathVmid ?? cls.upidVmid,
-            status: 503,
-            queueMs: null,
-            durationMs: null,
-            upid: null,
-            note: 'not-authority',
-          })
-          return
-        }
+        return
+      }
+
+      // Fail-closed: having lost the cluster lock we are no longer the
+      // authority, so a state-mutating write (contended pool op OR a
+      // disk/volume move) must not be forwarded blind while a rival proxy owns
+      // coordination. Reads still pass: observing the cluster is never unsafe.
+      if ((cls.opClass || cls.bodyTarget) && !deps.singletonHeld()) {
+        res.setHeader('retry-after', '10')
+        sendJson(res, 503, { message: 'proxy is not the current cluster authority' })
+        ops.record({
+          keyName: key.name,
+          method,
+          path: url.pathname,
+          opClass: cls.opClass,
+          vmid: cls.pathVmid ?? cls.upidVmid,
+          status: 503,
+          queueMs: null,
+          durationMs: null,
+          upid: null,
+          note: 'not-authority',
+        })
+        return
+      }
+
+      if (cls.opClass) {
         await handleHeavy(req, res, url, cls, key, started)
       } else if (cls.bodyTarget) {
         await handleBodyTargetPass(req, res, url, cls, key, started)
@@ -813,24 +899,32 @@ export function createDataPlaneHandler(deps: DataPlaneDeps): RequestListener {
   }
 }
 
+/** A guest VMID on a list row, coerced from number OR numeric string; null if
+ * the row names no guest (an infra/ISO/shared row). */
+function rowVmid(row: unknown): number | null {
+  const raw = (row as { vmid?: unknown }).vmid
+  const n = typeof raw === 'number' ? raw : typeof raw === 'string' ? Number.parseInt(raw, 10) : NaN
+  return Number.isInteger(n) && n > 0 ? n : null
+}
+
 /** Trim a Proxmox list `data` array to the entries the key may see. */
 function filterListData(
   data: unknown[],
   scope: NonNullable<Classified['listScope']>,
   ranges: [number, number][],
 ): unknown[] {
-  if (scope === 'resources') {
-    // Keep infra rows (no vmid: nodes, storage, pools) and in-range guests only.
+  if (scope === 'resources' || scope === 'storage') {
+    // Keep rows that name no guest (nodes, storage, pools, ISOs, templates) and
+    // in-range guest rows only. A foreign guest VMID (number or string) drops.
     return data.filter((row) => {
-      const vmid = (row as { vmid?: unknown }).vmid
-      if (typeof vmid !== 'number') return true
-      return vmidAllowed(ranges, vmid)
+      const vmid = rowVmid(row)
+      return vmid == null || vmidAllowed(ranges, vmid)
     })
   }
   if (scope === 'guests') {
     return data.filter((row) => {
-      const vmid = (row as { vmid?: unknown }).vmid
-      return typeof vmid === 'number' && vmidAllowed(ranges, vmid)
+      const vmid = rowVmid(row)
+      return vmid != null && vmidAllowed(ranges, vmid)
     })
   }
   // tasks: keep only tasks that target one of the key's VMIDs.

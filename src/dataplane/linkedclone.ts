@@ -111,6 +111,26 @@ export class LinkedCloneService {
     })
   }
 
+  /** Best-effort bounded wait for a task to stop, so a locked VM can be deleted
+   * during rollback. Never throws; caps the wait so rollback cannot hang. */
+  private async waitTaskQuiet(node: string, upid: string): Promise<void> {
+    const { settings, upstream } = this.deps
+    const pollMs = settings.all.taskPollMs
+    const deadline = Date.now() + Math.min(settings.all.taskTimeoutMs, 120_000)
+    try {
+      for (;;) {
+        const status = await upstream.api<TaskStatus>(
+          'GET',
+          `/nodes/${encodeURIComponent(node)}/tasks/${encodeURIComponent(upid)}/status`,
+        )
+        if (status.status === 'stopped' || Date.now() > deadline) return
+        await new Promise((r) => setTimeout(r, pollMs))
+      }
+    } catch {
+      // best-effort: a failed poll just means we delete without waiting
+    }
+  }
+
   private async destroyQuietly(node: string, vmid: number): Promise<void> {
     try {
       await this.deps.upstream.api('DELETE', `/nodes/${encodeURIComponent(node)}/qemu/${vmid}`)
@@ -169,11 +189,20 @@ export class LinkedCloneService {
 
     const created: Array<{ template: number; vmid: number; upid: string }> = []
     const grants: Grant[] = []
+    // A newid reserved for a clone that failed before it was recorded in
+    // `created` (admission or the clone POST threw): its POST may still have
+    // taken effect on the cluster, so rollback tries to destroy it too.
+    let pendingNewid: number | null = null
     const rollback = async (): Promise<void> => {
       for (const g of grants) g.release('linked-clone-rollback')
-      for (const c of created) {
-        this.deps.ids.release(c.vmid)
-        await this.destroyQuietly(req.node, c.vmid)
+      const toDestroy = created.map((c) => ({ vmid: c.vmid, upid: c.upid as string | null }))
+      if (pendingNewid != null) toDestroy.push({ vmid: pendingNewid, upid: null })
+      for (const { vmid, upid } of toDestroy) {
+        ids.release(vmid)
+        // A clone task still running holds a lock that would reject the delete,
+        // so wait for it to settle first (bounded, best-effort).
+        if (upid) await this.waitTaskQuiet(req.node, upid)
+        await this.destroyQuietly(req.node, vmid)
       }
       vlans.release(vlan)
     }
@@ -183,6 +212,7 @@ export class LinkedCloneService {
         if (signal.aborted) throw new LinkedCloneError('client disconnected', 499)
         const newid = await ids.allocate(key.vmidRanges)
         if (newid === null) throw new LinkedCloneError('the key ranges are exhausted', 507)
+        pendingNewid = newid
 
         const grant = await admission.acquire(
           { opClass: 'clone', keyName: key.name, vmid: newid, node: req.node },
@@ -198,6 +228,7 @@ export class LinkedCloneService {
           body,
         )
         created.push({ template: c.template, vmid: newid, upid })
+        pendingNewid = null
 
         await this.waitTask(req.node, upid, signal)
         await this.retagNet0(req.node, newid, vlan)
@@ -207,8 +238,10 @@ export class LinkedCloneService {
       await rollback()
       cluster.invalidate()
       if (err instanceof LinkedCloneError) throw err
+      // Do not leak upstream/internal detail to the app; log it, return generic.
+      log.warn('linked clone failed against the cluster', { key: key.name, error: String(err) })
       const status = err instanceof UpstreamError ? err.statusCode : 502
-      throw new LinkedCloneError(`linked clone failed: ${String(err)}`, status)
+      throw new LinkedCloneError('linked clone failed against the cluster', status)
     }
 
     leases.create({
@@ -229,31 +262,75 @@ export class LinkedCloneService {
   }
 }
 
+export interface VlanReaperOpts {
+  intervalMs?: number
+  /** A lease younger than this is never reaped (covers the /cluster/resources
+   * propagation lag for a freshly created pod). */
+  graceMs?: number
+  /** Consecutive ticks a lease's VMs must be absent before it is reaped, so one
+   * transient snapshot cannot free a live pod's VLAN. */
+  requiredMisses?: number
+}
+
 /**
- * Reaper: frees a VLAN lease once none of its VMs exist any more. This is how a
- * torn-down pod releases its tag with no explicit call from the app, keeping
- * the range self-healing. Returns a stop function.
+ * Reaper: frees a VLAN lease once its pod is gone, so a torn-down pod releases
+ * its tag with no explicit call from the app. It is deliberately conservative,
+ * because wrongly freeing a live pod's tag would let two tenants share a VLAN
+ * (an isolation breach), whereas a delayed free is merely a bounded leak:
+ *   - never reaps on an empty snapshot (quorum loss / restart look like "all
+ *     VMs gone" but are transient);
+ *   - never reaps a lease younger than `graceMs` (propagation lag);
+ *   - reaps only after `requiredMisses` consecutive ticks with the pod absent.
+ * Returns a stop function.
  */
 export function startVlanReaper(
   cluster: ClusterSnapshot,
   leases: VlanLeaseStore,
-  intervalMs = 60_000,
+  opts: VlanReaperOpts = {},
 ): () => void {
+  const intervalMs = opts.intervalMs ?? 60_000
+  const graceMs = opts.graceMs ?? 15 * 60_000
+  const requiredMisses = opts.requiredMisses ?? 2
+  const misses = new Map<number, number>() // vlan -> consecutive absent ticks
+  let stopped = false
+
   const tick = async (): Promise<void> => {
+    if (stopped) return
+    let vms
     try {
-      const vms = await cluster.vms()
-      const alive = new Set(vms.map((vm) => vm.vmid))
-      for (const lease of leases.list()) {
-        if (!lease.vmids.some((vmid) => alive.has(vmid))) {
-          leases.remove(lease.vlan)
-          log.info('vlan lease reaped', { vlan: lease.vlan, key: lease.keyName })
-        }
-      }
+      vms = await cluster.vms()
     } catch (err) {
       log.warn('vlan lease reaper tick failed', { error: String(err) })
+      return
+    }
+    // A shutdown may have landed while we awaited: do not touch the DB now.
+    if (stopped) return
+    // An empty VM list is almost always transient (quorum loss, restart), not
+    // "everything was deleted": never reap on it.
+    if (vms.length === 0) return
+    const alive = new Set(vms.map((vm) => vm.vmid))
+    const now = Date.now()
+    for (const lease of leases.list()) {
+      if (lease.vmids.some((vmid) => alive.has(vmid))) {
+        misses.delete(lease.vlan)
+        continue
+      }
+      if (now - lease.createdAt < graceMs) continue // too young to trust as gone
+      const streak = (misses.get(lease.vlan) ?? 0) + 1
+      if (streak >= requiredMisses) {
+        leases.remove(lease.vlan)
+        misses.delete(lease.vlan)
+        log.info('vlan lease reaped', { vlan: lease.vlan, key: lease.keyName })
+      } else {
+        misses.set(lease.vlan, streak)
+      }
     }
   }
+
   const timer = setInterval(() => void tick(), intervalMs)
   timer.unref()
-  return () => clearInterval(timer)
+  return () => {
+    stopped = true
+    clearInterval(timer)
+  }
 }
