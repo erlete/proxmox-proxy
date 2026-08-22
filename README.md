@@ -16,7 +16,7 @@ apps ──wss──> pveproxy :8006 (solo websockets VNC, directos por diseño)
 ```
 
 - **Plano de datos** (`/api2/...`): passthrough en streaming. Las operaciones pesadas (clone, delete, suspend) pasan por admisión; el resto fluye sin retención. El slot de admisión se retiene hasta que la **tarea** de Proxmox termina, no hasta que responde el HTTP, porque el coste real del cluster es la tarea.
-- **Plano nativo** (`/proxy/whoami`, `/proxy/health`, `/proxy/console-session`): descubrimiento, identidad y consolas. Una app solo necesita `PROXMOX_PROXY_ENDPOINT` y `PROXMOX_PROXY_KEY`; sus rangos y la URL de websockets se consultan en `whoami`. `POST /proxy/console-session {node, vmid}` acuña las credenciales del websocket VNC (vncticket + cookie de una identidad dedicada con solo `VM.Console`), de modo que la app abre la consola directa contra el nodo sin poseer ninguna credencial de Proxmox; requiere configurar `PROXMOX_CONSOLE_USERNAME/PASSWORD`.
+- **Plano nativo** (`/proxy/whoami`, `/proxy/health`, `/proxy/console-session`, `/proxy/linked-clone`): descubrimiento, identidad, consolas y clonación enlazada. Una app solo necesita `PROXMOX_PROXY_ENDPOINT` y `PROXMOX_PROXY_KEY`; sus rangos, la URL de websockets, el rango de VLAN y las capacidades se consultan en `whoami`. `POST /proxy/console-session {node, vmid}` acuña las credenciales del websocket VNC (vncticket + cookie de una identidad dedicada con solo `VM.Console`), de modo que la app abre la consola directa contra el nodo sin poseer ninguna credencial de Proxmox; requiere configurar `PROXMOX_CONSOLE_USERNAME/PASSWORD`. `POST /proxy/linked-clone` clona un grupo de plantillas como clones enlazados sobre un VLAN aislado y los devuelve ya configurados (ver la guía de consumo).
 - **Plano de gestión** (`/api/...` + panel): claves, colas en vivo (SSE), historial de operaciones y estado. API tipada con OpenAPI en `/api/openapi.json`; el cliente del panel se genera de ese documento.
 - **Singleton por cluster**: solo puede existir un proxy por cluster. El lock es un marcador con heartbeat en el comentario de un pool reservado de Proxmox; una segunda instancia se niega a arrancar mientras el marcador esté fresco y toma el relevo si caduca.
 - **Configuración en dos niveles**: el `.env` solo lleva lo de arranque (upstream, credenciales, red, singleton). Todo lo operable en caliente (caps de admisión, colas, TTL de sesión, URL de websockets, tamaño del historial) se gestiona desde el panel (Settings), se persiste en SQLite y se aplica sin reiniciar.
@@ -34,13 +34,17 @@ PVEAPIToken=svc-proxy@pve!nombre-app=secreto
 - La rotación admite una ventana de gracia en la que el secreto anterior sigue siendo válido (migración sin corte).
 - Cada clave lleva sus rangos de VMID: todo lo que quede fuera se rechaza con 403.
 
-## Política de autorización (v0)
+## Política de autorización
+
+La guía completa para las apps que lo consumen está en [docs/consumo-por-apps.md](docs/consumo-por-apps.md) (qué ven, qué pueden y qué no, contrato de cada operación, comportamientos esperados y migración desde acceso directo). En resumen:
 
 1. Los endpoints de identidad (`/access/...`) se deniegan siempre: la identidad la gestiona el proxy.
-2. Las lecturas pasan; una lectura sobre un VMID fuera de rango se deniega.
+2. **Opacidad**: una app solo ve lo suyo. Las lecturas de lista (`cluster/resources`, listas de guests y de tareas del nodo) se filtran a los rangos de la clave; una lectura sobre un VMID fuera de rango se deniega.
 3. Las escrituras exigen un VMID en el path (o en el UPID de una tarea) dentro de los rangos de la clave. Escrituras sin VMID se deniegan.
-4. En un clone, el `newid` del cuerpo tambien debe estar dentro de los rangos.
-5. Los websockets no se proxyfican (501): el VNC va directo al nodo, y un reinicio del proxy nunca corta consolas.
+4. **El proxy asigna el `newid`** en un clone: la app lo omite y lo lee del UPID devuelto. Si lo manda, debe estar en rango.
+5. **Las plantillas son de solo lectura** y no se borran nunca: se puede clonar desde ellas, pero cualquier escritura o DELETE sobre una plantilla se deniega.
+6. **Reservados como configuración**: un rango de clave no puede solapar un rango reservado (se valida al crear la clave y al editar los reservados), así que ninguna app puede siquiera nombrar un VMID reservado.
+7. Los websockets no se proxyfican (501): el VNC va directo al nodo, y un reinicio del proxy nunca corta consolas.
 
 ## Despliegue
 
@@ -82,10 +86,9 @@ npm run openapi                  # regenerar panel/openapi.json y los tipos del 
 
 ## Hoja de ruta
 
-Ya implementado: admisión **fail-closed** ante fallo interno o pérdida del lock; **backstop** que descuenta de los caps la carga del cluster que no pasa por el proxy (las consolas `vncproxy` se excluyen a propósito); **equidad max-min por aplicación** (round-robin work-conserving) con **prioridad manual** por tiers configurable en caliente; **botón rojo** (parar una tarea en curso) e **inventario por aplicación** en el panel.
+Ya implementado: admisión **fail-closed** ante fallo interno o pérdida del lock; **backstop** que descuenta de los caps la carga del cluster que no pasa por el proxy (las consolas `vncproxy` se excluyen a propósito); **equidad max-min por aplicación** (round-robin work-conserving) con **prioridad manual** por tiers configurable en caliente; **botón rojo** (parar una tarea en curso) e **inventario por aplicación** en el panel; **opacidad total** (una app solo ve lo suyo); **el proxy asigna VMIDs y VLANs** (la app no elige ninguno); **clonación enlazada de grupos** sobre un VLAN aislado, con liberación automática por reaper; **plantillas de solo lectura** (nunca se borran); **reservados como configuración**.
 
 Pendiente:
 
-- **Migración del resto de plataformas** detrás del proxy (portar el modo de token pre-aprovisionado, o un shim de `/access` en el proxy).
-- **Política hold-vs-429 por clave**: hoy es global (la petición espera hasta `maxHoldMs` y luego 429).
+- **Migración del resto de plataformas** detrás del proxy (empezando por la CTF; ver [docs/consumo-por-apps.md](docs/consumo-por-apps.md)).
 - `node:sqlite` es experimental en Node 24; el acceso está aislado en `src/db.ts` para poder migrar a `better-sqlite3` con un cambio local si hiciera falta.
