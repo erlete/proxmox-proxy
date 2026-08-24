@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.7.3](https://github.com/DLT-Code/proxmox-proxy/compare/v0.7.2...v0.7.3) (2026-08-24)
+
+
+### Bug Fixes
+
+* allow app vmid ranges to overlap; only reserved stays exclusive ([eee56f0](https://github.com/DLT-Code/proxmox-proxy/commit/eee56f0ae0316afc3aebdf5ecc3a2eac18bc76cc))
+* **panel:** mark the Unassigned tree node with a warning dot ([4787734](https://github.com/DLT-Code/proxmox-proxy/commit/4787734c4dd5c04c191cec97ced78fecf7c2de8d))
+
 ## [0.7.2](https://github.com/DLT-Code/proxmox-proxy/compare/v0.7.1...v0.7.2) (2026-08-24)
 
 
