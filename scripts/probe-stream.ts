@@ -255,7 +255,9 @@ async function openStream(vmid: number): Promise<Stream> {
   enc.writeUInt16BE(1, 2)
   enc.writeInt32BE(0, 4)
   ws.send(enc)
-  console.log(`  stream open: ${serverVersion.toString().trim()} ${width}x${height}@${bitsPerPixel}bpp`)
+  console.log(
+    `  stream open: ${serverVersion.toString().trim()} ${width}x${height}@${bitsPerPixel}bpp`,
+  )
   return { ws, reader, bytesPerPixel: bitsPerPixel / 8, width, height }
 }
 
