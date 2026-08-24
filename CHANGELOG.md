@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.7.2](https://github.com/DLT-Code/proxmox-proxy/compare/v0.7.1...v0.7.2) (2026-08-24)
+
+
+### Bug Fixes
+
+* **dataplane:** return the assigned clone VMID in an x-proxy-newid header ([90d502a](https://github.com/DLT-Code/proxmox-proxy/commit/90d502a42faa6335bceaf2866af91a9ce2bfa590))
+
 ## [0.7.1](https://github.com/DLT-Code/proxmox-proxy/compare/v0.7.0...v0.7.1) (2026-08-22)
 
 
