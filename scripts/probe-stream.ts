@@ -477,6 +477,28 @@ async function main(): Promise<void> {
 
   await phase('baseline', () => sleep(20_000))
 
+  // Focused threshold mode: bracket the concurrency at which clone/destroy
+  // bursts start to stall the stream (round 2 saw x2 clean and x4 freeze 5.5s).
+  if (process.env.PROBE_MATRIX === 'threshold') {
+    for (const n of [3, 4, 6]) {
+      let ids: number[] = []
+      await phase(`clone-x${n}`, async () => {
+        ids = await cloneBatch(n)
+      })
+      await settle()
+      await phase(`destroy-x${n}`, () => destroyBatch(ids))
+      await settle()
+    }
+    await phase('cooldown', () => sleep(10_000))
+    running = false
+    stream.ws.close()
+    await Promise.allSettled([frameLoop, pingLoop, apiLoop])
+    summarize()
+    writeFileSync(OUT, JSON.stringify({ t0, phases, events, samples }, null, 1))
+    console.log(`\nresults written to ${OUT} (${samples.length} samples)`)
+    return
+  }
+
   let l1: number[] = []
   let l2: number[] = []
   let l4: number[] = []
