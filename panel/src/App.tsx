@@ -305,6 +305,7 @@ export function App(): ReactElement {
               className={node === 'unassigned' ? 'node child sel' : 'node child'}
               onClick={() => select('unassigned')}
             >
+              <span className="dot warn" />
               <span className="ico" style={{ color: 'var(--warn)' }}>
                 <TriangleAlert size={13} />
               </span>

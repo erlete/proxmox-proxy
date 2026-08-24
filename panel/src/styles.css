@@ -295,6 +295,9 @@ a {
 .dot.res {
   background: var(--err);
 }
+.dot.warn {
+  background: var(--warn);
+}
 
 /* contextual submenu */
 .submenu {
