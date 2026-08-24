@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.8.0](https://github.com/DLT-Code/proxmox-proxy/compare/v0.7.3...v0.8.0) (2026-08-24)
+
+
+### Features
+
+* **admission:** stream guard serializes heavy ops on nodes with live consoles ([bb76349](https://github.com/DLT-Code/proxmox-proxy/commit/bb76349b27cc86d2b5d469461b6ce5c8b7761aff))
+
 ## [0.7.3](https://github.com/DLT-Code/proxmox-proxy/compare/v0.7.2...v0.7.3) (2026-08-24)
 
 
