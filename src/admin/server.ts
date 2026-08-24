@@ -218,20 +218,16 @@ export async function buildAdminServer(deps: AdminDeps): Promise<FastifyInstance
     async (req, reply) => {
       const { name, vmidRanges, comment } = req.body
       if (keys.get(name)) return reply.code(409).send({ message: `key already exists: ${name}` })
-      // Reserved ranges are enforced as configuration, not per-operation: an app
-      // range may never include a reserved VMID, so its own scope keeps it away.
+      // Reserved ranges are the only hard boundary: they are enforced as
+      // configuration, not per-operation, so an app range may never include a
+      // reserved VMID. App ranges MAY overlap each other on purpose (the same
+      // logical app driven from several environments, e.g. prod plus local dev,
+      // shares one cluster range); the allocator assigns from real occupancy so
+      // co-located apps never double-claim a VMID. The trade-off is that
+      // overlapping apps see each other's VMs in the shared band (opacity is
+      // per-range), which is the intended behaviour for those environments.
       if (rangesOverlap(vmidRanges as VmidRange[], settings.reservedRanges)) {
         return reply.code(400).send({ message: 'vmid ranges overlap a reserved range' })
-      }
-      // A VMID belongs to exactly one app: reject ranges that overlap another
-      // live key (a revoked key is dead and does not block reuse).
-      const clashKey = keys
-        .list()
-        .find((k) => k.enabled && rangesOverlap(vmidRanges as VmidRange[], k.vmidRanges))
-      if (clashKey) {
-        return reply
-          .code(400)
-          .send({ message: `vmid ranges overlap the ranges of key "${clashKey.name}"` })
       }
       try {
         const token = keys.create(name, vmidRanges as VmidRange[], comment ?? '')

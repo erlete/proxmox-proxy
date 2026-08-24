@@ -571,6 +571,27 @@ test('reserved ranges are enforced as configuration, not per-operation', async (
   assert.equal(clear.status, 200)
 })
 
+test('app ranges may overlap each other; only reserved is exclusive', async () => {
+  // Two apps sharing (overlapping) VMID ranges are BOTH accepted: a VMID does
+  // not belong to exactly one app. The same logical app driven from several
+  // environments (prod plus local dev) shares one cluster range on purpose,
+  // and the allocator assigns from real occupancy so co-located apps never
+  // double-claim. Only a reserved range is exclusive against apps.
+  const first = await fetch(`${adminUrl}/api/keys`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', cookie },
+    body: JSON.stringify({ name: 'app-overlap-a', vmidRanges: [[1500000, 1500099]] }),
+  })
+  assert.equal(first.status, 201)
+
+  const second = await fetch(`${adminUrl}/api/keys`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', cookie },
+    body: JSON.stringify({ name: 'app-overlap-b', vmidRanges: [[1500050, 1500150]] }),
+  })
+  assert.equal(second.status, 201)
+})
+
 test('purge removes a revoked key record; active keys are protected', async () => {
   const mk = await fetch(`${adminUrl}/api/keys`, {
     method: 'POST',
