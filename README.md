@@ -187,13 +187,16 @@ Content-Type: application/x-www-form-urlencoded
 full=0&name=reto-abc          # SIN newid
 
 200 OK
-{ "data": "UPID:nodo:...:qmclone:1100137:root@pam:" }
+X-Proxy-Newid: 1100137
+{ "data": "UPID:nodo:...:qmclone:<plantilla>:root@pam:" }
 ```
 
-El VMID creado se lee del **UPID** devuelto (el campo id del UPID de `qmclone`; en el ejemplo,
-`1100137`). La aplicación debe parsear el UPID para conocer su VM, y crear su registro interno
-**después** de recibir el UPID, no antes. Si aun así manda un `newid`, debe estar en rango o se
-rechaza; si el rango de la clave está agotado, el proxy responde 507.
+El VMID creado se lee de la cabecera de respuesta **`X-Proxy-Newid`** (en el ejemplo, `1100137`).
+Importante: **no** lo saques del UPID. El `id` del UPID de `qmclone` es el VMID **origen** (la
+plantilla), no el del clon creado; la cabecera es la única fuente fiable. El cuerpo sigue trayendo
+el UPID para seguir la tarea. La app debe crear su registro interno **después** de recibir la
+respuesta. Si aun así manda un `newid`, debe estar en rango o se rechaza (y la cabecera lo eco);
+si el rango de la clave está agotado, el proxy responde 507.
 
 ### Grupos de clones enlazados
 
@@ -340,7 +343,7 @@ que queda obsoleto:
 
 - Cualquier derivación de rangos por convención propia: el rango lo da `whoami`.
 - Su propio asignador de VMID y el escaneo del cluster para elegir un id libre: lo asigna el proxy y
-  se lee del UPID del clone.
+  se lee de la cabecera `X-Proxy-Newid` de la respuesta del clone.
 - El bootstrap de acceso (crear usuario de servicio, roles, ACLs, pools; emitir o rotar tokens) y
   las credenciales de administrador: el proxy ya trae una clave preaprovisionada.
 - La deduplicación de VLAN leyendo configuraciones ajenas: el proxy asigna y libera los VLAN de los
@@ -349,7 +352,8 @@ que queda obsoleto:
 
 Y debe **conservar o ajustar**:
 
-- Parsear el UPID del clone para conocer el VMID creado, y guardar su registro interno después.
+- Leer la cabecera `X-Proxy-Newid` de la respuesta del clone para conocer el VMID creado, y guardar
+  su registro interno después.
 - Usar `POST /proxy/linked-clone` para levantar pods, y operar cada pod por su VLAN (encender,
   apagar, suspender y destruir el grupo entero de una vez) en lugar de recorrer las máquinas.
 - Tratar los códigos de arriba (reintento en 429 y 503).

@@ -260,9 +260,11 @@ export function createDataPlaneHandler(deps: DataPlaneDeps): RequestListener {
 
     // A clone names its target in the body. The proxy owns id selection: if the
     // app omits newid we assign the lowest free id in its ranges and inject it;
-    // if it sends one, it must be in range. The created id is discoverable from
-    // the returned qmclone UPID, so the app never needs to pick it.
+    // if it sends one, it must be in range. The created id is returned to the app
+    // in the `x-proxy-newid` response header (a qmclone UPID carries the SOURCE
+    // vmid, not the new one, so the header is the only reliable source).
     let assignedNewid: number | null = null
+    let cloneNewid: number | null = null
     if (cls.opClass === 'clone') {
       const ct = req.headers['content-type']
       let newid = extractBodyVmid(body, ct, 'newid')
@@ -309,6 +311,7 @@ export function createDataPlaneHandler(deps: DataPlaneDeps): RequestListener {
         })
         return
       }
+      cloneNewid = newid // the effective new id (assigned or provided), for the header
     }
 
     const abort = new AbortController()
@@ -404,6 +407,9 @@ export function createDataPlaneHandler(deps: DataPlaneDeps): RequestListener {
       settled = true
       const out = respHeaders(r.headers)
       out['content-length'] = String(respBuf.length)
+      // Hand the created VMID back explicitly: the app cannot derive it from the
+      // qmclone UPID (that carries the source/template vmid on a real cluster).
+      if (cloneNewid != null && r.statusCode < 400) out['x-proxy-newid'] = String(cloneNewid)
       res.writeHead(r.statusCode, out)
       res.end(respBuf)
     } catch (err) {

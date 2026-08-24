@@ -143,11 +143,11 @@ function fakeUpstream(): Server {
       const clone = /^\/api2\/json\/nodes\/n1\/qemu\/(\d+)\/clone$/.exec(p)
       if (clone && req.method === 'POST') {
         cloneCount += 1
-        // A real qmclone UPID carries the NEW vmid, which is how the app learns
-        // the id the proxy assigned.
         const newid = new URLSearchParams(Buffer.concat(chunks).toString()).get('newid') ?? clone[1]
         createdVms.add(Number(newid))
-        const upid = `UPID:n1:0000${cloneCount}:0:0:qmclone:${newid}:root@pam:`
+        // A real qmclone UPID carries the SOURCE (template) vmid, NOT the created
+        // one, so the app must read the new id from the x-proxy-newid header.
+        const upid = `UPID:n1:0000${cloneCount}:0:0:qmclone:${clone[1]}:root@pam:`
         return json(200, upid)
       }
 
@@ -645,8 +645,11 @@ test('the proxy assigns the newid when the app omits it', async () => {
     body: 'name=auto', // no newid: the proxy must pick one
   })
   assert.equal(res.status, 200)
+  // The created id comes from the x-proxy-newid header, NOT the UPID (a real
+  // qmclone UPID carries the source template vmid).
+  const assigned = Number(res.headers.get('x-proxy-newid'))
   const upid = ((await res.json()) as { data: string }).data
-  const assigned = Number(upid.split(':')[6])
+  assert.equal(Number(upid.split(':')[6]), 1100001) // UPID carries the SOURCE
   // A free id inside the key range, avoiding the template and the live VM.
   assert.ok(assigned >= 1100000 && assigned <= 1100999, `assigned ${assigned} out of range`)
   assert.ok(assigned !== 1100001 && assigned !== 1100100)
