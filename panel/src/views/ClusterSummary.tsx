@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState, type ReactElement } from 'react'
 import {
   Activity,
   History,
+  MonitorPlay,
   Network,
   Server,
   ShieldAlert,
@@ -221,6 +222,33 @@ export function ClusterSummary(): ReactElement {
               <h3>Admission classes</h3>
               <span className="hint">active / effective cap</span>
             </header>
+            {(() => {
+              const consoles = queues?.consoles ?? status.consoles
+              const protect = queues?.streamProtect ?? status.streamProtect
+              const total = consoles.reduce((n, c) => n + c.count, 0)
+              const active = protect && total > 0
+              return (
+                <div
+                  className="hint"
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 6,
+                    margin: '2px 0 10px',
+                    color: active ? 'var(--accent)' : undefined,
+                  }}
+                >
+                  <MonitorPlay size={13} />
+                  {!protect
+                    ? 'stream guard off: caps only'
+                    : total === 0
+                      ? 'stream guard armed · no live consoles, caps apply'
+                      : `stream guard ACTIVE · ${total} live console${total === 1 ? '' : 's'} (` +
+                        consoles.map((c) => `${c.node}: ${c.count}`).join(', ') +
+                        ') · heavy ops serialized'}
+                </div>
+              )
+            })()}
             {admission.map((c) => {
               const cap = c.effectiveCap
               const pct = cap > 0 ? Math.min(100, (c.active / cap) * 100) : c.active > 0 ? 100 : 0

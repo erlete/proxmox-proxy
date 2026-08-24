@@ -54,6 +54,8 @@ function admissionOptsFrom(s: Settings): AdmissionOpts {
     taskPollMs: s.taskPollMs,
     taskTimeoutMs: s.taskTimeoutMs,
     priorityApps: priorityOrder(s.appPriority),
+    streamProtect: s.streamProtect,
+    streamPacingMs: s.streamPacingMs,
   }
 }
 

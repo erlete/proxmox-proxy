@@ -71,9 +71,19 @@ export const QueueClassSchema = Type.Object({
   waiting: Type.Array(WaitingSchema),
 })
 
+export const ConsoleNodeSchema = Type.Object({
+  node: Type.String(),
+  /** Live consoles (running vncproxy-family tasks) on the node. */
+  count: Type.Integer(),
+})
+
 export const QueuesReply = Type.Object({
   /** Manual admission priority order (app names); empty = round-robin. */
   priorityApps: Type.Array(Type.String()),
+  /** Stream guard: serialized, paced heavy ops on nodes with live consoles. */
+  streamProtect: Type.Boolean(),
+  streamPacingMs: Type.Integer(),
+  consoles: Type.Array(ConsoleNodeSchema),
   classes: Type.Array(QueueClassSchema),
 })
 
@@ -126,6 +136,9 @@ export const StatusReply = Type.Object({
       waiting: Type.Integer(),
     }),
   ),
+  /** Stream guard state: live consoles per node, and whether it is enabled. */
+  streamProtect: Type.Boolean(),
+  consoles: Type.Array(ConsoleNodeSchema),
 })
 
 export const HealthReply = Type.Object({
@@ -144,6 +157,10 @@ export const SettingsSchema = Type.Object({
   taskTimeoutMs: Type.Integer({ minimum: 10000, maximum: 86400000 }),
   opsRingMax: Type.Integer({ minimum: 100, maximum: 1000000 }),
   sessionTtlHours: Type.Integer({ minimum: 1, maximum: 168 }),
+  /** Serialize and pace heavy ops on nodes with live consoles. */
+  streamProtect: Type.Boolean(),
+  /** Minimum gap between heavy-op starts on a guarded node (ms). */
+  streamPacingMs: Type.Integer({ minimum: 0, maximum: 30000 }),
   publicWsUrl: Type.String({ maxLength: 200 }),
   /** App name -> admission priority value (higher wins); 0 omitted. */
   appPriority: Type.Record(Type.String(), Type.Integer()),

@@ -70,6 +70,15 @@ export interface AdmissionOpts {
    * bottom tier and is served round-robin. Empty = pure round-robin fairness.
    */
   priorityApps: string[]
+  /**
+   * Stream guard: while a node has LIVE consoles (running vncproxy-family
+   * tasks, seen in the same cluster task poll as the out-of-band discount),
+   * heavy ops on that node run one at a time with `streamPacingMs` between
+   * starts. With no console open, the configured caps apply untouched: the
+   * only window that matters for stream quality is when someone is watching.
+   */
+  streamProtect: boolean
+  streamPacingMs: number
 }
 
 export interface TaskFinishedEvent {
@@ -88,9 +97,19 @@ interface TaskStatus {
 interface ClusterTask {
   upid: string
   type: string
+  node?: string
   /** Present only once the task has finished. */
   endtime?: number
 }
+
+/**
+ * Task types that mean "someone is looking at a console right now". A console
+ * task stays RUNNING for exactly as long as its websocket lives (verified live:
+ * visible within ~2s of the socket opening, gone within ~1s of it closing), so
+ * the cluster task list is ground truth for live viewers, including ones that
+ * never touched this proxy (Proxmox UI, platforms not yet migrated).
+ */
+const CONSOLE_TASK_TYPES = new Set(['vncproxy', 'vncshell', 'termproxy', 'spiceproxy'])
 
 /**
  * Proxmox worker task types that map to a contended admission class.
@@ -136,6 +155,12 @@ export class Admission extends EventEmitter {
   private priorityApps: string[]
   /** Last app served from the bottom (round-robin) tier, per class. */
   private rrCursor: Record<OpClassName, string> = { clone: '', delete: '', suspend: '' }
+  /** Live consoles per node, from the same cluster task poll as out-of-band. */
+  private consoleNodes = new Map<string, number>()
+  /** Last heavy-op grant per node, the anchor for stream pacing. */
+  private lastHeavyStart = new Map<string, number>()
+  /** Pending re-pump for a time-blocked (paced) waiter. */
+  private pacingTimer: NodeJS.Timeout | null = null
 
   constructor(
     private upstream: Upstream | null,
@@ -171,6 +196,50 @@ export class Admission extends EventEmitter {
     let n = 0
     for (const q of this.classes[cls].waiting.values()) n += q.length
     return n
+  }
+
+  /** Heavy ops currently holding a slot on this node, ACROSS classes. */
+  private heavyRunningOn(node: string): number {
+    let n = 0
+    for (const cls of OP_CLASSES) {
+      for (const r of this.classes[cls].running.values()) if (r.node === node) n += 1
+    }
+    return n
+  }
+
+  /**
+   * Stream guard verdict for a candidate grant: `null` = free to start now;
+   * `Infinity` = blocked until a running heavy op on the node finishes (finish()
+   * re-pumps); a timestamp = paced, allowed from that instant (a timer re-pumps).
+   * The guard only ever serializes and paces, it never denies: with no console
+   * open on the node the caps rule alone, which is the whole point.
+   */
+  private guardBlockedUntil(meta: GrantMeta): number | null {
+    if (!this.opts.streamProtect || meta.node == null) return null
+    if ((this.consoleNodes.get(meta.node) ?? 0) === 0) return null
+    if (this.heavyRunningOn(meta.node) > 0) return Infinity
+    const at = (this.lastHeavyStart.get(meta.node) ?? 0) + this.opts.streamPacingMs
+    return Date.now() >= at ? null : at
+  }
+
+  private pacingAt = Infinity
+
+  /** Re-pump every class at (or shortly after) the given instant. */
+  private scheduleRepump(at: number): void {
+    if (this.pacingTimer) {
+      if (at >= this.pacingAt) return // an earlier or equal wake-up is already set
+      clearTimeout(this.pacingTimer)
+    }
+    this.pacingAt = at
+    this.pacingTimer = setTimeout(
+      () => {
+        this.pacingTimer = null
+        this.pacingAt = Infinity
+        for (const cls of OP_CLASSES) this.pump(cls)
+      },
+      Math.max(0, at - Date.now()) + 5,
+    )
+    this.pacingTimer.unref()
   }
 
   /**
@@ -211,6 +280,7 @@ export class Admission extends EventEmitter {
 
   stop(): void {
     if (this.pollTimer) clearInterval(this.pollTimer)
+    if (this.pacingTimer) clearTimeout(this.pacingTimer)
     for (const cls of OP_CLASSES) {
       for (const q of this.classes[cls].waiting.values()) {
         for (const waiter of q) {
@@ -229,7 +299,11 @@ export class Admission extends EventEmitter {
     if (signal?.aborted) return Promise.reject(new ClientGoneError())
 
     const waiting = this.countWaiting(meta.opClass)
-    if (state.running.size < this.effectiveCap(meta.opClass) && waiting === 0) {
+    if (
+      state.running.size < this.effectiveCap(meta.opClass) &&
+      waiting === 0 &&
+      this.guardBlockedUntil(meta) === null
+    ) {
       return Promise.resolve(this.grant(meta, enqueuedAt))
     }
 
@@ -260,6 +334,10 @@ export class Admission extends EventEmitter {
       if (q) q.push(waiter)
       else state.waiting.set(meta.keyName, [waiter])
       this.changed()
+      // A guard-paced waiter has capacity but must wait for a timestamp; make
+      // sure something wakes the pump then (finish() covers the running case).
+      const blocked = this.guardBlockedUntil(meta)
+      if (blocked !== null && blocked !== Infinity) this.scheduleRepump(blocked)
     })
   }
 
@@ -286,6 +364,9 @@ export class Admission extends EventEmitter {
       pollErrors: 0,
     }
     this.classes[meta.opClass].running.set(id, running)
+    // Pacing anchor, recorded unconditionally: a console that opens mid-burst
+    // must inherit the spacing from the burst's last start, not reset it.
+    if (meta.node != null) this.lastHeavyStart.set(meta.node, Date.now())
     this.changed()
     let done = false
     return {
@@ -318,7 +399,9 @@ export class Admission extends EventEmitter {
       } satisfies TaskFinishedEvent)
     }
     this.changed()
-    this.pump(cls)
+    // Pump EVERY class: under the stream guard a finishing delete can be what
+    // unblocks a waiting clone on the same node, across class lines.
+    for (const c of OP_CLASSES) this.pump(c)
   }
 
   private pump(cls: OpClassName): void {
@@ -327,11 +410,21 @@ export class Admission extends EventEmitter {
       const app = this.pickWaiterApp(cls)
       if (!app) break
       const q = state.waiting.get(app)!
-      const waiter = q.shift()!
+      // Peek before shifting: a guard-blocked head stays first in line. On a
+      // multi-node cluster this can hold the class behind one guarded node's
+      // waiter; accepted for now (the real deployment is single-node) and the
+      // guard never blocks forever: a finish or the pacing timer re-pumps.
+      const head = q[0]
+      const blocked = this.guardBlockedUntil(head.meta)
+      if (blocked !== null) {
+        if (blocked !== Infinity) this.scheduleRepump(blocked)
+        break
+      }
+      q.shift()
       if (q.length === 0) state.waiting.delete(app)
-      clearTimeout(waiter.timer)
-      waiter.cleanup()
-      waiter.resolve(this.grant(waiter.meta, waiter.enqueuedAt))
+      clearTimeout(head.timer)
+      head.cleanup()
+      head.resolve(this.grant(head.meta, head.enqueuedAt))
     }
   }
 
@@ -387,13 +480,21 @@ export class Admission extends EventEmitter {
         for (const r of this.classes[cls].running.values()) if (r.upid) ours.add(r.upid)
       }
       const counts: Record<OpClassName, number> = { clone: 0, delete: 0, suspend: 0 }
+      const consoles = new Map<string, number>()
       for (const t of tasks) {
         if (t.endtime) continue // finished, no longer contending
+        // Live console (vncproxy family): the stream-guard signal. Counted for
+        // every task source, so viewers that bypass the proxy still protect.
+        if (CONSOLE_TASK_TYPES.has(t.type) && t.node) {
+          consoles.set(t.node, (consoles.get(t.node) ?? 0) + 1)
+          continue
+        }
         const cls = TASK_TYPE_CLASS[t.type]
-        if (!cls) continue // not a contended class (vncproxy lands here)
+        if (!cls) continue // not a contended class
         if (ours.has(t.upid)) continue // already counted in our own running set
         counts[cls] += 1
       }
+      this.setConsoleNodes(consoles)
       // A just-granted op is visible in the cluster list before its UPID is
       // attached locally (attachTask runs only after the upstream round-trip),
       // so it would otherwise be counted as out-of-band while also occupying a
@@ -409,9 +510,14 @@ export class Admission extends EventEmitter {
     } catch (err) {
       // Bias to non-obstruction: if we cannot see the cluster we must not block
       // legitimate apps. Decay the discount to zero after a few misses rather
-      // than freezing a stale value that would keep obstructing.
+      // than freezing a stale value that would keep obstructing. The console
+      // map decays with it: better to briefly stop guarding than to serialize
+      // an app behind a console that may have closed long ago.
       this.obPollErrors += 1
-      if (this.obPollErrors >= 3) this.setOutOfBand({ clone: 0, delete: 0, suspend: 0 })
+      if (this.obPollErrors >= 3) {
+        this.setOutOfBand({ clone: 0, delete: 0, suspend: 0 })
+        this.setConsoleNodes(new Map())
+      }
       if (this.obPollErrors <= 3 || this.obPollErrors % 10 === 0) {
         log.warn('out-of-band task poll failed', {
           failures: this.obPollErrors,
@@ -429,6 +535,23 @@ export class Admission extends EventEmitter {
     }
     // A drop frees effective capacity: pump any classes that can now run.
     if (dropped) for (const cls of OP_CLASSES) this.pump(cls)
+    this.changed()
+  }
+
+  private setConsoleNodes(next: Map<string, number>): void {
+    let changed = next.size !== this.consoleNodes.size
+    if (!changed) {
+      for (const [node, n] of next) {
+        if (this.consoleNodes.get(node) !== n) {
+          changed = true
+          break
+        }
+      }
+    }
+    if (!changed) return
+    this.consoleNodes = next
+    // Fewer (or no) consoles may lift the guard for queued waiters: pump.
+    for (const cls of OP_CLASSES) this.pump(cls)
     this.changed()
   }
 
@@ -462,6 +585,10 @@ export class Admission extends EventEmitter {
 
   snapshot(): {
     priorityApps: string[]
+    streamProtect: boolean
+    streamPacingMs: number
+    /** Live consoles per node; a node listed here has the guard engaged. */
+    consoles: { node: string; count: number }[]
     classes: {
       name: OpClassName
       cap: number
@@ -481,6 +608,11 @@ export class Admission extends EventEmitter {
   } {
     return {
       priorityApps: [...this.priorityApps],
+      streamProtect: this.opts.streamProtect,
+      streamPacingMs: this.opts.streamPacingMs,
+      consoles: [...this.consoleNodes.entries()]
+        .map(([node, count]) => ({ node, count }))
+        .sort((a, b) => a.node.localeCompare(b.node)),
       classes: OP_CLASSES.map((name) => {
         const state = this.classes[name]
         return {

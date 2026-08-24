@@ -210,6 +210,11 @@ export interface paths {
                 active: number
                 waiting: number
               }[]
+              streamProtect: boolean
+              consoles: {
+                node: string
+                count: number
+              }[]
             }
           }
         }
@@ -247,6 +252,12 @@ export interface paths {
           content: {
             'application/json': {
               priorityApps: string[]
+              streamProtect: boolean
+              streamPacingMs: number
+              consoles: {
+                node: string
+                count: number
+              }[]
               classes: {
                 name: string
                 cap: number
@@ -631,6 +642,8 @@ export interface paths {
                 taskTimeoutMs: number
                 opsRingMax: number
                 sessionTtlHours: number
+                streamProtect: boolean
+                streamPacingMs: number
                 publicWsUrl: string
                 appPriority: {
                   [key: string]: number
@@ -648,6 +661,8 @@ export interface paths {
                 taskTimeoutMs: number
                 opsRingMax: number
                 sessionTtlHours: number
+                streamProtect: boolean
+                streamPacingMs: number
                 publicWsUrl: string
                 appPriority: {
                   [key: string]: number
@@ -679,6 +694,8 @@ export interface paths {
             taskTimeoutMs?: number
             opsRingMax?: number
             sessionTtlHours?: number
+            streamProtect?: boolean
+            streamPacingMs?: number
             publicWsUrl?: string
             appPriority?: {
               [key: string]: number
@@ -706,6 +723,8 @@ export interface paths {
                 taskTimeoutMs: number
                 opsRingMax: number
                 sessionTtlHours: number
+                streamProtect: boolean
+                streamPacingMs: number
                 publicWsUrl: string
                 appPriority: {
                   [key: string]: number
@@ -723,6 +742,8 @@ export interface paths {
                 taskTimeoutMs: number
                 opsRingMax: number
                 sessionTtlHours: number
+                streamProtect: boolean
+                streamPacingMs: number
                 publicWsUrl: string
                 appPriority: {
                   [key: string]: number
@@ -788,6 +809,8 @@ export interface paths {
                 taskTimeoutMs: number
                 opsRingMax: number
                 sessionTtlHours: number
+                streamProtect: boolean
+                streamPacingMs: number
                 publicWsUrl: string
                 appPriority: {
                   [key: string]: number
@@ -805,6 +828,8 @@ export interface paths {
                 taskTimeoutMs: number
                 opsRingMax: number
                 sessionTtlHours: number
+                streamProtect: boolean
+                streamPacingMs: number
                 publicWsUrl: string
                 appPriority: {
                   [key: string]: number

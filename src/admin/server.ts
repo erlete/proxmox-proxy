@@ -196,6 +196,8 @@ export async function buildAdminServer(deps: AdminDeps): Promise<FastifyInstance
         active: c.running.length,
         waiting: c.waiting.length,
       })),
+      streamProtect: snapshot.streamProtect,
+      consoles: snapshot.consoles,
     }
   })
 

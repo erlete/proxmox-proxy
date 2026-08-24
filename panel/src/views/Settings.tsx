@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactElement } from 'react'
-import { Network, Plus, ShieldBan, X } from 'lucide-react'
+import { MonitorPlay, Network, Plus, ShieldBan, X } from 'lucide-react'
 import { api } from '../api'
 import type { paths } from '../api/schema'
 
@@ -8,7 +8,10 @@ type Values = SettingsBody['settings']
 type Range = [number, number]
 
 interface FieldDef {
-  key: Exclude<keyof Values, 'appPriority' | 'reserved' | 'linkedVlanRange'>
+  key: Exclude<
+    keyof Values,
+    'appPriority' | 'reserved' | 'linkedVlanRange' | 'streamProtect' | 'streamPacingMs'
+  >
   label: string
   hint: string
 }
@@ -121,6 +124,66 @@ function LinkedVlanEditor({
         Current: {value ? `${value[0]} - ${value[1]}` : 'disabled'}. Valid tags 1 to 4094.
       </span>
       {err && <div className="error">{err}</div>}
+    </section>
+  )
+}
+
+/**
+ * Stream guard: while a node has live consoles, heavy ops (clone, delete,
+ * suspend) on it run one at a time with a minimum gap between starts. With no
+ * console open, the caps above apply untouched.
+ */
+function StreamGuardEditor({
+  enabled,
+  pacingMs,
+  pacingDefault,
+  onToggle,
+  onPacing,
+}: {
+  enabled: boolean
+  pacingMs: number
+  pacingDefault: number
+  onToggle: (next: boolean) => void
+  onPacing: (raw: string) => void
+}): ReactElement {
+  return (
+    <section className="card settings-group">
+      <div className="card-title">
+        <MonitorPlay size={13} className="muted" /> Stream guard
+      </div>
+      <p className="hint settings-note">
+        While a node has live consoles (running vncproxy tasks, watched in the same cluster poll as
+        the out-of-band discount), heavy operations on it run one at a time with a minimum gap
+        between starts, so a viewer never pays for a burst. With no console open, the caps above
+        apply untouched. Applied hot on save.
+      </p>
+      <div className="settings-grid">
+        <label>
+          Guard enabled
+          <span style={{ display: 'flex', alignItems: 'center', gap: 8, minHeight: 30 }}>
+            <input
+              type="checkbox"
+              checked={enabled}
+              onChange={(e) => onToggle(e.target.checked)}
+              style={{ width: 'auto' }}
+            />
+            <span className="hint">{enabled ? 'protecting live consoles' : 'off: caps only'}</span>
+          </span>
+        </label>
+        <label>
+          Pacing (ms)
+          <input
+            value={String(pacingMs)}
+            onChange={(e) => onPacing(e.target.value)}
+            inputMode="numeric"
+            placeholder={String(pacingDefault)}
+            disabled={!enabled}
+          />
+          <span className="hint">
+            gap between heavy-op starts on a guarded node (default {pacingDefault})
+          </span>
+        </label>
+      </div>
     </section>
   )
 }
@@ -295,6 +358,16 @@ export function Settings(): ReactElement {
           </div>
         </section>
       ))}
+      <StreamGuardEditor
+        enabled={current.streamProtect}
+        pacingMs={current.streamPacingMs}
+        pacingDefault={defaults.streamPacingMs}
+        onToggle={(next) => {
+          setSaved(false)
+          setDirty((d) => ({ ...d, streamProtect: next }))
+        }}
+        onPacing={(raw) => edit('streamPacingMs', raw)}
+      />
       <LinkedVlanEditor value={current.linkedVlanRange as Range | null} onChange={setLinkedVlan} />
       <ReservedEditor ranges={current.reserved as Range[]} onChange={setReserved} />
       {error && <div className="error">{error}</div>}

@@ -304,6 +304,15 @@ debe estar en rango.
 Las operaciones pesadas (clone, delete, suspend) pasan por control de admisión. El slot se retiene
 hasta que la **tarea** de Proxmox termina, no hasta que responde el HTTP.
 
+**Guardia de streams.** La calidad de una consola en directo manda sobre el trabajo de fondo:
+mientras un nodo tenga consolas abiertas (tareas `vncproxy` en ejecución, que el proxy observa en el
+mismo sondeo de tareas del cluster que usa para el descuento out-of-band), las operaciones pesadas
+sobre ese nodo se ejecutan **de una en una** y con un espaciado mínimo entre arranques
+(`streamPacingMs`). Sin consolas abiertas no hay ventana que proteger y rigen los caps normales sin
+recorte. La guardia cubre también consolas abiertas sin pasar por el proxy (la UI de Proxmox, otras
+plataformas), nunca deniega (solo serializa y espacia) y se desactiva desde Settings
+(`streamProtect`).
+
 | Código | Significado                                                                                        | Qué debe hacer la aplicación                                 |
 | ------ | -------------------------------------------------------------------------------------------------- | ------------------------------------------------------------ |
 | `200`  | OK. En operaciones pesadas, el cuerpo trae el UPID de la tarea.                                    | Seguir la tarea por su UPID si necesita el resultado.        |
@@ -328,8 +337,11 @@ Reglas que el operador debe respetar al configurar el proxy para una aplicación
 - **Los reservados son configuración, no bloqueo por operación.** Los rangos o VMIDs reservados
   (en Settings) son una restricción de configuración: el proxy no permite crear una clave cuyo rango
   solape un reservado, ni añadir un reservado que solape el rango de una clave existente. El propio
-  alcance de cada clave ya impide operar fuera; los reservados se ven en el inventario. Del mismo
-  modo, dos claves no pueden solapar rangos: cada VMID tiene un solo dueño.
+  alcance de cada clave ya impide operar fuera; los reservados se ven en el inventario. Dos claves
+  **sí** pueden solapar rangos entre sí (la misma aplicación lógica desde varios entornos, por
+  ejemplo producción y desarrollo local, comparte un rango del cluster): el asignador reparte desde
+  la ocupación real, así que nunca se duplica un VMID, y las aplicaciones solapadas se ven las VMs
+  de la banda común (la opacidad es por rango).
 - **El rango de VLAN de clonación enlazada** (`linkedVlanRange` en Settings) es el pool de tags
   802.1q del que el proxy arrienda un VLAN por grupo. Debe **no colisionar** con los tags que ya
   llevan por defecto las VMs. Vacío significa clonación enlazada desactivada.

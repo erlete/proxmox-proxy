@@ -30,6 +30,9 @@ const deletedVms = new Set<number>()
 const createdVms = new Set<number>()
 // Records POST /status/{action} calls the proxy forwarded for group power ops.
 const powerCalls: { vmid: number; action: string }[] = []
+// Cluster-wide task list served to the proxy's backstop poll. Tests push a
+// running vncproxy row here to simulate a live console (the stream guard).
+let clusterTasks: Record<string, unknown>[] = []
 
 function fakeUpstream(): Server {
   return createServer((req, res) => {
@@ -45,8 +48,8 @@ function fakeUpstream(): Server {
 
       if (p === '/api2/json/version') return json(200, { version: '8.4.1' })
 
-      // Backstop poll: no out-of-band cluster load in this fixture.
-      if (p === '/api2/json/cluster/tasks') return json(200, [])
+      // Backstop poll: out-of-band load and live consoles, test-controlled.
+      if (p === '/api2/json/cluster/tasks') return json(200, clusterTasks)
 
       // Cluster inventory: a template and a VM inside app-a's range, one outside.
       if (p === '/api2/json/cluster/resources') {
@@ -590,6 +593,84 @@ test('app ranges may overlap each other; only reserved is exclusive', async () =
     body: JSON.stringify({ name: 'app-overlap-b', vmidRanges: [[1500050, 1500150]] }),
   })
   assert.equal(second.status, 201)
+})
+
+test('stream guard: a live console serializes heavy ops; none = caps apply', async () => {
+  const clone = (newid: number): Promise<Response> =>
+    fetch(`${dataUrl}/api2/json/nodes/n1/qemu/1100050/clone`, {
+      method: 'POST',
+      headers: { authorization: appToken, 'content-type': 'application/x-www-form-urlencoded' },
+      body: `newid=${newid}`,
+    })
+  const cloneClass = async (): Promise<{ running: unknown[]; waiting: unknown[] }> => {
+    const snap = await queuesSnapshot()
+    return snap.classes.find((c) => c.name === 'clone') as {
+      running: unknown[]
+      waiting: unknown[]
+    }
+  }
+
+  // Cap 2, no pacing delay: what the guard adds here is pure serialization.
+  const tuned = await fetch(`${adminUrl}/api/settings`, {
+    method: 'PUT',
+    headers: { 'content-type': 'application/json', cookie },
+    body: JSON.stringify({ cloneCap: 2, streamPacingMs: 0, taskPollMs: 250 }),
+  })
+  assert.equal(tuned.status, 200)
+
+  try {
+    // A live console on n1: a RUNNING vncproxy task (no endtime) in the poll.
+    clusterTasks = [
+      {
+        upid: 'UPID:n1:0099:0:0:vncproxy:1100100:svc@pve:',
+        type: 'vncproxy',
+        node: 'n1',
+        id: '1100100',
+      },
+    ]
+    await waitFor(async () => {
+      const snap = await queuesSnapshot()
+      return (
+        (snap as { consoles?: { node: string }[] }).consoles?.some((c) => c.node === 'n1') === true
+      )
+    })
+
+    // First clone starts; the second must WAIT despite cap 2: guard serializes.
+    const first = await clone(1100150)
+    assert.equal(first.status, 200)
+    const upidA = ((await first.json()) as { data: string }).data
+    await waitFor(async () => (await cloneClass()).running.length === 1)
+
+    const secondPromise = clone(1100151)
+    await waitFor(async () => (await cloneClass()).waiting.length === 1)
+    assert.equal((await cloneClass()).running.length, 1)
+
+    // The running task finishing is what releases the serialized waiter.
+    stoppedTasks.add(upidA)
+    const second = await secondPromise
+    assert.equal(second.status, 200)
+    stoppedTasks.add(((await second.json()) as { data: string }).data)
+    await waitFor(async () => {
+      const cls = await cloneClass()
+      return cls.running.length === 0 && cls.waiting.length === 0
+    })
+
+    // Console gone: the guard lifts and cap 2 admits two clones CONCURRENTLY.
+    clusterTasks = []
+    await waitFor(async () => {
+      const snap = await queuesSnapshot()
+      return (snap as { consoles?: unknown[] }).consoles?.length === 0
+    })
+    const [c1, c2] = await Promise.all([clone(1100152), clone(1100153)])
+    assert.equal(c1.status, 200)
+    assert.equal(c2.status, 200)
+    await waitFor(async () => (await cloneClass()).running.length === 2)
+    stoppedTasks.add(((await c1.json()) as { data: string }).data)
+    stoppedTasks.add(((await c2.json()) as { data: string }).data)
+    await waitFor(async () => (await cloneClass()).running.length === 0)
+  } finally {
+    clusterTasks = []
+  }
 })
 
 test('purge removes a revoked key record; active keys are protected', async () => {

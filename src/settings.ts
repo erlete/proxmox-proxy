@@ -18,6 +18,13 @@ export interface Settings {
   taskTimeoutMs: number
   opsRingMax: number
   sessionTtlHours: number
+  /**
+   * Stream guard: while a node has live consoles (running vncproxy-family
+   * tasks), heavy ops on it run one at a time with `streamPacingMs` between
+   * starts. With no console open, the caps apply untouched.
+   */
+  streamProtect: boolean
+  streamPacingMs: number
   /** Base URL apps use for direct VNC websockets. Empty = the upstream origin. */
   publicWsUrl: string
   /**
@@ -52,6 +59,8 @@ export const SETTINGS_DEFAULTS: Settings = {
   taskTimeoutMs: 600_000,
   opsRingMax: 20_000,
   sessionTtlHours: 12,
+  streamProtect: true,
+  streamPacingMs: 1_000,
   publicWsUrl: '',
   appPriority: {},
   reserved: [],
@@ -64,7 +73,10 @@ const VLAN_MIN = 1
 const VLAN_MAX = 4094
 
 const BOUNDS: Record<
-  keyof Omit<Settings, 'publicWsUrl' | 'appPriority' | 'reserved' | 'linkedVlanRange'>,
+  keyof Omit<
+    Settings,
+    'publicWsUrl' | 'appPriority' | 'reserved' | 'linkedVlanRange' | 'streamProtect'
+  >,
   [number, number]
 > = {
   cloneCap: [0, 64],
@@ -76,6 +88,7 @@ const BOUNDS: Record<
   taskTimeoutMs: [10_000, 86_400_000],
   opsRingMax: [100, 1_000_000],
   sessionTtlHours: [1, 168],
+  streamPacingMs: [0, 30_000],
 }
 
 const META_KEY = 'settings'
@@ -137,6 +150,9 @@ export class SettingsStore extends EventEmitter {
         if (typeof value !== 'string' || value.length > 200) throw new Error('invalid publicWsUrl')
         if (value !== '') new URL(value) // throws when not a URL
         next.publicWsUrl = value
+      } else if (key === 'streamProtect') {
+        if (typeof value !== 'boolean') throw new Error('streamProtect must be a boolean')
+        next.streamProtect = value
       } else if (key === 'appPriority') {
         next.appPriority = validatePriority(value)
       } else if (key === 'reserved') {
