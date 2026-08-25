@@ -1,4 +1,12 @@
-import { existsSync, readFileSync } from 'node:fs'
+import {
+  createReadStream,
+  existsSync,
+  readFileSync,
+  renameSync,
+  statSync,
+  unlinkSync,
+  writeFileSync,
+} from 'node:fs'
 import { join } from 'node:path'
 import fastifyCookie from '@fastify/cookie'
 import fastifyStatic from '@fastify/static'
@@ -8,6 +16,8 @@ import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest }
 import type { Admission } from '../admission/queue.js'
 import type { Config } from '../config.js'
 import type { VlanLeaseStore } from '../dataplane/leases.js'
+import { RESTORE_PENDING_FILE, type Db } from '../db.js'
+import { createBackupSnapshot, validateBackupFile } from './backup.js'
 import { rangesOverlap, vmidAllowed, type KeyStore, type VmidRange } from '../keys/store.js'
 import { log } from '../log.js'
 import type { OpsLog } from '../ops.js'
@@ -29,6 +39,7 @@ import {
   OperationsQuery,
   OperationsReply,
   QueuesReply,
+  RestoreReply,
   RotateKeyBody,
   SettingsPatch,
   SettingsReply,
@@ -49,6 +60,13 @@ export interface AdminDeps {
   cluster: ClusterSnapshot
   leases: VlanLeaseStore
   singletonHeld: () => boolean
+  /** Live database handle, for the online backup snapshot. */
+  db: Db
+  /**
+   * Ask the host process for a clean restart (restore staging). Null when the
+   * runner cannot restart (then a staged restore applies on the next boot).
+   */
+  requestRestart: (() => void) | null
 }
 
 /** A UPID is `UPID:node:...`; the node is what a task-stop call needs. */
@@ -79,7 +97,7 @@ interface LoginAttempts {
 }
 
 export async function buildAdminServer(deps: AdminDeps): Promise<FastifyInstance> {
-  const { config, keys, settings, admission, health, ops, upstream, cluster, leases } = deps
+  const { config, keys, settings, admission, health, ops, upstream, cluster, leases, db } = deps
   const version = readVersion()
   const attempts = new Map<string, LoginAttempts>()
 
@@ -92,6 +110,12 @@ export async function buildAdminServer(deps: AdminDeps): Promise<FastifyInstance
   }).withTypeProvider<TypeBoxTypeProvider>()
 
   await app.register(fastifyCookie)
+  // Raw bytes for the restore upload (the backup is an SQLite file, not JSON).
+  app.addContentTypeParser(
+    'application/octet-stream',
+    { parseAs: 'buffer', bodyLimit: 256 * 1024 * 1024 },
+    (_req, body, done) => done(null, body),
+  )
   await app.register(fastifySwagger, {
     openapi: {
       openapi: '3.1.0',
@@ -300,6 +324,67 @@ export async function buildAdminServer(deps: AdminDeps): Promise<FastifyInstance
       keys.remove(name)
       log.info('api key record purged', { name })
       return reply.code(204).send()
+    },
+  )
+
+  // Full backup: a consistent online snapshot of the entire durable state
+  // (keys with their hashes, settings, operation history, VLAN leases, panel
+  // secrets) as one SQLite file. Boot-level environment config is NOT in it.
+  app.get('/api/backup', async (_req, reply) => {
+    const path = createBackupSnapshot(db, config.dataDir)
+    const stamp = new Date().toISOString().slice(0, 19).replaceAll(':', '-')
+    const stream = createReadStream(path)
+    stream.on('close', () => {
+      try {
+        unlinkSync(path)
+      } catch {
+        // best-effort cleanup of the snapshot temp file
+      }
+    })
+    return reply
+      .header('content-type', 'application/octet-stream')
+      .header('content-disposition', `attachment; filename="proxmox-proxy-backup-${stamp}.db"`)
+      .header('content-length', String(statSync(path).size))
+      .send(stream)
+  })
+
+  // Full restore: FULL OVERWRITE of the durable state with an uploaded backup.
+  // The file is validated, staged next to the live database and applied
+  // atomically at the NEXT BOOT (openDb swaps it in), so a crash mid-restore
+  // can never leave a half-written store; then the process restarts itself.
+  app.post(
+    '/api/restore',
+    {
+      bodyLimit: 256 * 1024 * 1024,
+      schema: { response: { 200: RestoreReply, 400: ErrorReply, 409: ErrorReply } },
+    },
+    async (req, reply) => {
+      if (config.dataDir === ':memory:') {
+        return reply.code(409).send({ message: 'restore requires a persistent DATA_DIR' })
+      }
+      const body = req.body
+      if (!Buffer.isBuffer(body) || body.length < 512) {
+        return reply
+          .code(400)
+          .send({ message: 'upload the backup file as application/octet-stream' })
+      }
+      const upload = join(config.dataDir, `${RESTORE_PENDING_FILE}.upload`)
+      writeFileSync(upload, body)
+      try {
+        validateBackupFile(upload)
+      } catch (err) {
+        try {
+          unlinkSync(upload)
+        } catch {
+          // the invalid upload could not be removed; it is inert either way
+        }
+        return reply.code(400).send({ message: String(err instanceof Error ? err.message : err) })
+      }
+      renameSync(upload, join(config.dataDir, RESTORE_PENDING_FILE))
+      log.warn('restore staged: the database will be fully replaced on restart')
+      // Let the reply flush before the process goes down.
+      if (deps.requestRestart) setTimeout(deps.requestRestart, 300).unref()
+      return { restarting: deps.requestRestart != null }
     },
   )
 

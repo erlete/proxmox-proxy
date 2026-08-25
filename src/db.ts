@@ -1,8 +1,30 @@
-import { mkdirSync } from 'node:fs'
+import { existsSync, mkdirSync, renameSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
+import { log } from './log.js'
 
 export type Db = DatabaseSync
+
+/** Basename of the single durable store inside the data dir. */
+export const DB_FILE = 'proxy.db'
+/** A staged restore waiting to become the live database at next boot. */
+export const RESTORE_PENDING_FILE = `${DB_FILE}.restore-pending`
+
+/**
+ * Apply a staged restore BEFORE opening: an uploaded backup only becomes the
+ * live database at boot, atomically, so a crash mid-restore can never leave a
+ * half-written store behind. The WAL sidecars are removed with the old file:
+ * they belong to the database being replaced, not to the restored one.
+ */
+function applyPendingRestore(dataDir: string): void {
+  const live = join(dataDir, DB_FILE)
+  const pending = join(dataDir, RESTORE_PENDING_FILE)
+  if (!existsSync(pending)) return
+  rmSync(`${live}-wal`, { force: true })
+  rmSync(`${live}-shm`, { force: true })
+  renameSync(pending, live)
+  log.warn('staged restore applied: the database was fully replaced by the uploaded backup')
+}
 
 /**
  * Single durable store of the proxy: issued API keys and the bounded
@@ -15,7 +37,8 @@ export function openDb(dataDir: string): Db {
     db = new DatabaseSync(':memory:')
   } else {
     mkdirSync(dataDir, { recursive: true })
-    db = new DatabaseSync(join(dataDir, 'proxy.db'))
+    applyPendingRestore(dataDir)
+    db = new DatabaseSync(join(dataDir, DB_FILE))
   }
   db.exec(`
     PRAGMA journal_mode = WAL;

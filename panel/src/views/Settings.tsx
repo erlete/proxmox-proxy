@@ -1,5 +1,14 @@
-import { useEffect, useState, type ReactElement } from 'react'
-import { MonitorPlay, Network, Plus, ShieldBan, X } from 'lucide-react'
+import { useEffect, useRef, useState, type ReactElement } from 'react'
+import {
+  DatabaseBackup,
+  Download,
+  MonitorPlay,
+  Network,
+  Plus,
+  ShieldBan,
+  Upload,
+  X,
+} from 'lucide-react'
 import { api } from '../api'
 import type { paths } from '../api/schema'
 
@@ -256,6 +265,95 @@ function ReservedEditor({
   )
 }
 
+/**
+ * Full backup and restore of the proxy's durable state (keys, settings,
+ * operation history, VLAN leases, panel secrets) as one SQLite file. Restore
+ * is a FULL OVERWRITE staged atomically and applied by a self-restart.
+ */
+function BackupCard(): ReactElement {
+  const fileRef = useRef<HTMLInputElement>(null)
+  const [busy, setBusy] = useState(false)
+  const [msg, setMsg] = useState<string | null>(null)
+  const [err, setErr] = useState<string | null>(null)
+
+  const restore = async (file: File): Promise<void> => {
+    const ok = window.confirm(
+      'FULL OVERWRITE: every app key, setting, operation record and VLAN lease ' +
+        'will be replaced by the backup, and the proxy will restart. Continue?',
+    )
+    if (!ok) return
+    setBusy(true)
+    setErr(null)
+    setMsg('Uploading backup...')
+    try {
+      const res = await fetch('/api/restore', {
+        method: 'POST',
+        headers: { 'content-type': 'application/octet-stream' },
+        body: file,
+      })
+      if (!res.ok) {
+        const body = (await res.json().catch(() => null)) as { message?: string } | null
+        setErr(body?.message ?? `restore failed (${res.status})`)
+        setMsg(null)
+        setBusy(false)
+        return
+      }
+      setMsg('Backup staged. The proxy is restarting; this page reloads when it is back.')
+      // Wait for the restart, then reload (the session may need a fresh login:
+      // the restored database brings its own panel secrets).
+      await new Promise((r) => setTimeout(r, 3000))
+      for (let i = 0; i < 30; i++) {
+        try {
+          const health = await fetch('/api/health')
+          if (health.ok) break
+        } catch {
+          // still restarting
+        }
+        await new Promise((r) => setTimeout(r, 2000))
+      }
+      window.location.reload()
+    } catch {
+      setErr('upload failed; the proxy may be restarting already')
+      setBusy(false)
+    }
+  }
+
+  return (
+    <section className="card settings-group">
+      <div className="card-title">
+        <DatabaseBackup size={13} className="muted" /> Backup and restore
+      </div>
+      <p className="hint settings-note">
+        One SQLite file with the whole durable state: app keys (hashed), settings, operation
+        history, VLAN leases and the panel secrets. Boot-level environment config (upstream, service
+        token, console identity, bind) is not included; it travels with the compose deployment.
+        Restore is a full overwrite applied atomically on a self-restart.
+      </p>
+      <div className="toolbar">
+        <a className="btn icon-btn" href="/api/backup" download>
+          <Download size={13} /> Download backup
+        </a>
+        <button className="btn icon-btn" disabled={busy} onClick={() => fileRef.current?.click()}>
+          <Upload size={13} /> Restore from file
+        </button>
+        <input
+          ref={fileRef}
+          type="file"
+          accept=".db,.sqlite,application/octet-stream"
+          style={{ display: 'none' }}
+          onChange={(e) => {
+            const file = e.target.files?.[0]
+            e.target.value = ''
+            if (file) void restore(file)
+          }}
+        />
+      </div>
+      {msg && <span className="hint">{msg}</span>}
+      {err && <div className="error">{err}</div>}
+    </section>
+  )
+}
+
 export function Settings(): ReactElement {
   const [values, setValues] = useState<Values | null>(null)
   const [defaults, setDefaults] = useState<Values | null>(null)
@@ -370,6 +468,7 @@ export function Settings(): ReactElement {
       />
       <LinkedVlanEditor value={current.linkedVlanRange as Range | null} onChange={setLinkedVlan} />
       <ReservedEditor ranges={current.reserved as Range[]} onChange={setReserved} />
+      <BackupCard />
       {error && <div className="error">{error}</div>}
       <div className="toolbar">
         <button

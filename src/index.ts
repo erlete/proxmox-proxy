@@ -26,7 +26,13 @@ async function main(): Promise<void> {
   process.on('SIGINT', () => shutdown(0, 'SIGINT'))
 
   try {
-    app = await createApp(config, () => shutdown(1, 'cluster lock lost'))
+    app = await createApp(
+      config,
+      () => shutdown(1, 'cluster lock lost'),
+      // Restore staged from the panel: exit clean and let the container
+      // runtime restart the process; the staged backup applies at boot.
+      () => shutdown(0, 'restore staged, restarting'),
+    )
   } catch (err) {
     if (err instanceof SingletonHeldError) {
       log.error(err.message)

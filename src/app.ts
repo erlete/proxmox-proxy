@@ -63,7 +63,11 @@ function admissionOptsFrom(s: Settings): AdmissionOpts {
  * Wires every module together and starts both planes. Throws
  * SingletonHeldError when another instance already guards the cluster.
  */
-export async function createApp(config: Config, onFatal?: () => void): Promise<App> {
+export async function createApp(
+  config: Config,
+  onFatal?: () => void,
+  onRestartRequest?: () => void,
+): Promise<App> {
   const db = openDb(config.dataDir)
 
   // Zero-config bootstrap: anything not set in the environment is generated
@@ -170,6 +174,8 @@ export async function createApp(config: Config, onFatal?: () => void): Promise<A
     cluster,
     leases,
     singletonHeld,
+    db,
+    requestRestart: onRestartRequest ?? null,
   })
   await admin.ready()
 

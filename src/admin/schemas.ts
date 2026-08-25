@@ -183,6 +183,11 @@ export const SettingsReply = Type.Object({
   defaults: SettingsSchema,
 })
 
+export const RestoreReply = Type.Object({
+  /** True when a restart was requested; the staged backup applies at boot. */
+  restarting: Type.Boolean(),
+})
+
 export const TaskStopBody = Type.Object({
   /** Full UPID of the running task to stop; the node is parsed from it. */
   upid: Type.String({ minLength: 1 }),

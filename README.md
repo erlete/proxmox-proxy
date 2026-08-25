@@ -348,6 +348,29 @@ Reglas que el operador debe respetar al configurar el proxy para una aplicación
 - **Los caps de admisión** (clone, delete, suspend) y los parámetros de cola se ajustan en caliente
   desde Settings, sin reiniciar.
 
+## Copia de seguridad y migración de host
+
+Todo el estado duradero del proxy vive en un único fichero SQLite, y el panel lo expone entero:
+
+- **Descargar** (Settings, «Download backup», o `GET /api/backup` con sesión de panel): un snapshot
+  consistente tomado en caliente, sin parar el servicio. Incluye las claves de las aplicaciones
+  (con sus hashes; los tokens en claro no se guardan nunca), los settings, el historial de
+  operaciones, los arriendos de VLAN y los secretos del panel (el secreto de sesión y, si se
+  autogeneró, el hash de la contraseña de administración).
+- **Restaurar** (Settings, «Restore from file», o `POST /api/restore`): **sobreescritura completa**.
+  El fichero se valida, se deja preparado junto a la base de datos y se aplica de forma atómica en
+  el siguiente arranque; el proxy se reinicia solo (el `restart: unless-stopped` del compose lo
+  levanta). Un fallo a mitad nunca deja un estado a medias: hasta el intercambio del arranque, la
+  base anterior sigue intacta.
+
+Para **migrar de host**: desplegar el compose en el destino con su propio `.env` (la configuración
+de arranque, upstream, token de servicio, identidad de consola y bind, viaja en el entorno, no en
+la copia), restaurar el backup desde el panel del destino y listo. Dos notas: las sesiones del
+panel se invalidan (los secretos restaurados sustituyen a los del destino; la contraseña pasa a
+ser la del origen salvo que el `.env` la fije), y los arriendos de VLAN de pods que ya no existan
+en el cluster los libera el recolector con sus salvaguardas de siempre. Restaura siempre sobre una
+versión del proxy igual o más nueva que la que produjo la copia.
+
 ## Migración desde acceso directo al cluster
 
 Una aplicación que hoy habla directamente con Proxmox y pasa a consumir el proxy debe **quitar** lo
