@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.10.0](https://github.com/DLT-Code/proxmox-proxy/compare/v0.9.0...v0.10.0) (2026-08-26)
+
+
+### Features
+
+* pace power ops under the stream guard and automate backups ([023a8c2](https://github.com/DLT-Code/proxmox-proxy/commit/023a8c2f310dda7b4d55339532a9a451f2f5a1c2))
+
 ## [0.9.0](https://github.com/DLT-Code/proxmox-proxy/compare/v0.8.0...v0.9.0) (2026-08-25)
 
 
