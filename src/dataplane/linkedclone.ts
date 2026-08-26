@@ -416,8 +416,9 @@ export class LinkedCloneService {
     return { vlan, node: lease.node, action, members }
   }
 
-  /** One member's power op, waiting for its task; suspend takes an admission
-   * slot (it contends for pool I/O), the rest do not. */
+  /** One member's power op, waiting for its task. Suspend contends for pool
+   * I/O (its own class); the rest go through the power class, which is free
+   * with no console open and serialized by the stream guard when one is. */
   private async powerOne(
     key: ApiKeyRecord,
     node: string,
@@ -427,22 +428,18 @@ export class LinkedCloneService {
   ): Promise<string> {
     const { admission, upstream } = this.deps
     const base = `/nodes/${encodeURIComponent(node)}/qemu/${vmid}/status`
-    if (action === 'suspend') {
-      const grant = await admission.acquire(
-        { opClass: 'suspend', keyName: key.name, vmid, node },
-        signal,
-      )
-      try {
-        const upid = await upstream.api<string>('POST', `${base}/suspend`, { todisk: 1 })
-        await this.waitTask(node, upid, signal)
-        return upid
-      } finally {
-        grant.release('group-suspend')
-      }
+    const opClass = action === 'suspend' ? 'suspend' : 'power'
+    const grant = await admission.acquire({ opClass, keyName: key.name, vmid, node }, signal)
+    try {
+      const upid =
+        action === 'suspend'
+          ? await upstream.api<string>('POST', `${base}/suspend`, { todisk: 1 })
+          : await upstream.api<string>('POST', `${base}/${action}`)
+      await this.waitTask(node, upid, signal)
+      return upid
+    } finally {
+      grant.release(`group-${action}`)
     }
-    const upid = await upstream.api<string>('POST', `${base}/${action}`)
-    await this.waitTask(node, upid, signal)
-    return upid
   }
 }
 

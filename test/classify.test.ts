@@ -40,10 +40,25 @@ test('classifies cluster-wide list reads for opacity filtering', () => {
 })
 
 test('pass operations carry no class', () => {
-  assert.equal(classify('POST', '/api2/json/nodes/n1/qemu/1100100/status/start').opClass, null)
   assert.equal(classify('GET', '/api2/json/nodes/n1/qemu/1100100/status/current').opClass, null)
   assert.equal(classify('POST', '/api2/json/nodes/n1/qemu/1100100/vncproxy').opClass, null)
   assert.equal(classify('GET', '/api2/json/version').opClass, null)
+})
+
+test('power ops carry the power class (guard-only, near-unlimited cap)', () => {
+  for (const action of ['start', 'stop', 'shutdown', 'reset', 'resume']) {
+    assert.equal(
+      classify('POST', `/api2/json/nodes/n1/qemu/1100100/status/${action}`).opClass,
+      'power',
+    )
+  }
+  assert.equal(classify('POST', '/api2/json/nodes/n1/lxc/200/status/stop').opClass, 'power')
+  // Suspend keeps its own contended class; a GET on a status path stays free.
+  assert.equal(
+    classify('POST', '/api2/json/nodes/n1/qemu/1100100/status/suspend').opClass,
+    'suspend',
+  )
+  assert.equal(classify('GET', '/api2/json/nodes/n1/qemu/1100100/status/start').opClass, null)
 })
 
 test('extracts the vmid from the path', () => {

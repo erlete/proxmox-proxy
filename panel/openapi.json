@@ -3,7 +3,7 @@
   "info": {
     "title": "proxmox-proxy admin API",
     "description": "Management plane: keys, queues, operations, status.",
-    "version": "0.7.3"
+    "version": "0.8.0"
   },
   "components": {
     "schemas": {}
@@ -883,6 +883,64 @@
         }
       }
     },
+    "/api/backup-token": {
+      "get": {
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "configured"
+                  ],
+                  "properties": {
+                    "configured": {
+                      "type": "boolean"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "token"
+                  ],
+                  "properties": {
+                    "token": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "responses": {
+          "204": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/restore": {
       "post": {
         "responses": {
@@ -1138,6 +1196,8 @@
                         "sessionTtlHours",
                         "streamProtect",
                         "streamPacingMs",
+                        "autoBackupIntervalHours",
+                        "autoBackupKeep",
                         "publicWsUrl",
                         "appPriority",
                         "reserved",
@@ -1195,6 +1255,16 @@
                         "streamPacingMs": {
                           "minimum": 0,
                           "maximum": 30000,
+                          "type": "integer"
+                        },
+                        "autoBackupIntervalHours": {
+                          "minimum": 1,
+                          "maximum": 168,
+                          "type": "integer"
+                        },
+                        "autoBackupKeep": {
+                          "minimum": 0,
+                          "maximum": 60,
                           "type": "integer"
                         },
                         "publicWsUrl": {
@@ -1268,6 +1338,8 @@
                         "sessionTtlHours",
                         "streamProtect",
                         "streamPacingMs",
+                        "autoBackupIntervalHours",
+                        "autoBackupKeep",
                         "publicWsUrl",
                         "appPriority",
                         "reserved",
@@ -1325,6 +1397,16 @@
                         "streamPacingMs": {
                           "minimum": 0,
                           "maximum": 30000,
+                          "type": "integer"
+                        },
+                        "autoBackupIntervalHours": {
+                          "minimum": 1,
+                          "maximum": 168,
+                          "type": "integer"
+                        },
+                        "autoBackupKeep": {
+                          "minimum": 0,
+                          "maximum": 60,
                           "type": "integer"
                         },
                         "publicWsUrl": {
@@ -1452,6 +1534,16 @@
                     "maximum": 30000,
                     "type": "integer"
                   },
+                  "autoBackupIntervalHours": {
+                    "minimum": 1,
+                    "maximum": 168,
+                    "type": "integer"
+                  },
+                  "autoBackupKeep": {
+                    "minimum": 0,
+                    "maximum": 60,
+                    "type": "integer"
+                  },
                   "publicWsUrl": {
                     "maxLength": 200,
                     "type": "string"
@@ -1538,6 +1630,8 @@
                         "sessionTtlHours",
                         "streamProtect",
                         "streamPacingMs",
+                        "autoBackupIntervalHours",
+                        "autoBackupKeep",
                         "publicWsUrl",
                         "appPriority",
                         "reserved",
@@ -1595,6 +1689,16 @@
                         "streamPacingMs": {
                           "minimum": 0,
                           "maximum": 30000,
+                          "type": "integer"
+                        },
+                        "autoBackupIntervalHours": {
+                          "minimum": 1,
+                          "maximum": 168,
+                          "type": "integer"
+                        },
+                        "autoBackupKeep": {
+                          "minimum": 0,
+                          "maximum": 60,
                           "type": "integer"
                         },
                         "publicWsUrl": {
@@ -1668,6 +1772,8 @@
                         "sessionTtlHours",
                         "streamProtect",
                         "streamPacingMs",
+                        "autoBackupIntervalHours",
+                        "autoBackupKeep",
                         "publicWsUrl",
                         "appPriority",
                         "reserved",
@@ -1725,6 +1831,16 @@
                         "streamPacingMs": {
                           "minimum": 0,
                           "maximum": 30000,
+                          "type": "integer"
+                        },
+                        "autoBackupIntervalHours": {
+                          "minimum": 1,
+                          "maximum": 168,
+                          "type": "integer"
+                        },
+                        "autoBackupKeep": {
+                          "minimum": 0,
+                          "maximum": 60,
                           "type": "integer"
                         },
                         "publicWsUrl": {
@@ -1838,6 +1954,8 @@
                         "sessionTtlHours",
                         "streamProtect",
                         "streamPacingMs",
+                        "autoBackupIntervalHours",
+                        "autoBackupKeep",
                         "publicWsUrl",
                         "appPriority",
                         "reserved",
@@ -1895,6 +2013,16 @@
                         "streamPacingMs": {
                           "minimum": 0,
                           "maximum": 30000,
+                          "type": "integer"
+                        },
+                        "autoBackupIntervalHours": {
+                          "minimum": 1,
+                          "maximum": 168,
+                          "type": "integer"
+                        },
+                        "autoBackupKeep": {
+                          "minimum": 0,
+                          "maximum": 60,
                           "type": "integer"
                         },
                         "publicWsUrl": {
@@ -1968,6 +2096,8 @@
                         "sessionTtlHours",
                         "streamProtect",
                         "streamPacingMs",
+                        "autoBackupIntervalHours",
+                        "autoBackupKeep",
                         "publicWsUrl",
                         "appPriority",
                         "reserved",
@@ -2025,6 +2155,16 @@
                         "streamPacingMs": {
                           "minimum": 0,
                           "maximum": 30000,
+                          "type": "integer"
+                        },
+                        "autoBackupIntervalHours": {
+                          "minimum": 1,
+                          "maximum": 168,
+                          "type": "integer"
+                        },
+                        "autoBackupKeep": {
+                          "minimum": 0,
+                          "maximum": 60,
                           "type": "integer"
                         },
                         "publicWsUrl": {

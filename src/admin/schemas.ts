@@ -161,6 +161,10 @@ export const SettingsSchema = Type.Object({
   streamProtect: Type.Boolean(),
   /** Minimum gap between heavy-op starts on a guarded node (ms). */
   streamPacingMs: Type.Integer({ minimum: 0, maximum: 30000 }),
+  /** Rotating local snapshot interval (hours). */
+  autoBackupIntervalHours: Type.Integer({ minimum: 1, maximum: 168 }),
+  /** Snapshots retained in <dataDir>/backups; 0 disables auto backups. */
+  autoBackupKeep: Type.Integer({ minimum: 0, maximum: 60 }),
   publicWsUrl: Type.String({ maxLength: 200 }),
   /** App name -> admission priority value (higher wins); 0 omitted. */
   appPriority: Type.Record(Type.String(), Type.Integer()),
@@ -186,6 +190,16 @@ export const SettingsReply = Type.Object({
 export const RestoreReply = Type.Object({
   /** True when a restart was requested; the staged backup applies at boot. */
   restarting: Type.Boolean(),
+})
+
+export const BackupTokenStatusReply = Type.Object({
+  /** Whether a backup pull token is configured (its value is never shown). */
+  configured: Type.Boolean(),
+})
+
+export const BackupTokenReply = Type.Object({
+  /** Full pull token: shown exactly once, only its hash is stored. */
+  token: Type.String(),
 })
 
 export const TaskStopBody = Type.Object({

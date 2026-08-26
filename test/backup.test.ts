@@ -150,6 +150,36 @@ test('full backup and restore roundtrip across boots', async () => {
     const settingsRes = await fetch(`${urlB}/api/settings`, { headers: { cookie: cookieB } })
     const { settings } = (await settingsRes.json()) as { settings: { cloneCap: number } }
     assert.equal(settings.cloneCap, 7, 'backed-up setting restored')
+
+    // Pull token: authorizes the backup download with a single header, nothing
+    // else; a wrong token or a disabled one is a 401.
+    const noAuth = await fetch(`${urlB}/api/backup`)
+    assert.equal(noAuth.status, 401)
+    const minted = await fetch(`${urlB}/api/backup-token`, {
+      method: 'POST',
+      headers: { cookie: cookieB },
+    })
+    assert.equal(minted.status, 200)
+    const { token } = (await minted.json()) as { token: string }
+    assert.match(token, /^pbt_/)
+    const pulled = await fetch(`${urlB}/api/backup`, { headers: { 'x-backup-token': token } })
+    assert.equal(pulled.status, 200)
+    const bytes = Buffer.from(await pulled.arrayBuffer())
+    assert.equal(bytes.subarray(0, 15).toString('latin1'), 'SQLite format 3')
+    const wrong = await fetch(`${urlB}/api/backup`, { headers: { 'x-backup-token': 'pbt_nope' } })
+    assert.equal(wrong.status, 401)
+    // The token opens the backup only, not the rest of the API.
+    const scoped = await fetch(`${urlB}/api/keys`, { headers: { 'x-backup-token': token } })
+    assert.equal(scoped.status, 401)
+    const disabled = await fetch(`${urlB}/api/backup-token`, {
+      method: 'DELETE',
+      headers: { cookie: cookieB },
+    })
+    assert.equal(disabled.status, 204)
+    const afterDisable = await fetch(`${urlB}/api/backup`, {
+      headers: { 'x-backup-token': token },
+    })
+    assert.equal(afterDisable.status, 401)
   } finally {
     await appB.close()
   }

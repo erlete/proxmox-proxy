@@ -25,6 +25,9 @@ export interface Settings {
    */
   streamProtect: boolean
   streamPacingMs: number
+  /** Rotating local snapshots in <dataDir>/backups; keep = 0 disables. */
+  autoBackupIntervalHours: number
+  autoBackupKeep: number
   /** Base URL apps use for direct VNC websockets. Empty = the upstream origin. */
   publicWsUrl: string
   /**
@@ -61,6 +64,8 @@ export const SETTINGS_DEFAULTS: Settings = {
   sessionTtlHours: 12,
   streamProtect: true,
   streamPacingMs: 1_000,
+  autoBackupIntervalHours: 24,
+  autoBackupKeep: 7,
   publicWsUrl: '',
   appPriority: {},
   reserved: [],
@@ -89,6 +94,8 @@ const BOUNDS: Record<
   opsRingMax: [100, 1_000_000],
   sessionTtlHours: [1, 168],
   streamPacingMs: [0, 30_000],
+  autoBackupIntervalHours: [1, 168],
+  autoBackupKeep: [0, 60],
 }
 
 const META_KEY = 'settings'

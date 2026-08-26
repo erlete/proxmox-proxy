@@ -150,11 +150,11 @@ export class Admission extends EventEmitter {
   private pollTimer: NodeJS.Timeout | null = null
   private changePending = false
   /** Contended cluster load that did NOT pass through the proxy (backstop). */
-  private outOfBand: Record<OpClassName, number> = { clone: 0, delete: 0, suspend: 0 }
+  private outOfBand: Record<OpClassName, number> = { clone: 0, delete: 0, suspend: 0, power: 0 }
   private obPollErrors = 0
   private priorityApps: string[]
   /** Last app served from the bottom (round-robin) tier, per class. */
-  private rrCursor: Record<OpClassName, string> = { clone: '', delete: '', suspend: '' }
+  private rrCursor: Record<OpClassName, string> = { clone: '', delete: '', suspend: '', power: '' }
   /** Live consoles per node, from the same cluster task poll as out-of-band. */
   private consoleNodes = new Map<string, number>()
   /** Last heavy-op grant per node, the anchor for stream pacing. */
@@ -172,6 +172,7 @@ export class Admission extends EventEmitter {
       clone: { cap: opts.caps.clone, running: new Map(), waiting: new Map() },
       delete: { cap: opts.caps.delete, running: new Map(), waiting: new Map() },
       suspend: { cap: opts.caps.suspend, running: new Map(), waiting: new Map() },
+      power: { cap: opts.caps.power, running: new Map(), waiting: new Map() },
     }
   }
 
@@ -198,10 +199,10 @@ export class Admission extends EventEmitter {
     return n
   }
 
-  /** Heavy ops currently holding a slot on this node, ACROSS classes. */
-  private heavyRunningOn(node: string): number {
+  /** Ops of the given classes currently holding a slot on this node. */
+  private runningOn(node: string, classes: readonly OpClassName[]): number {
     let n = 0
-    for (const cls of OP_CLASSES) {
+    for (const cls of classes) {
       for (const r of this.classes[cls].running.values()) if (r.node === node) n += 1
     }
     return n
@@ -209,15 +210,25 @@ export class Admission extends EventEmitter {
 
   /**
    * Stream guard verdict for a candidate grant: `null` = free to start now;
-   * `Infinity` = blocked until a running heavy op on the node finishes (finish()
+   * `Infinity` = blocked until a running op on the node finishes (finish()
    * re-pumps); a timestamp = paced, allowed from that instant (a timer re-pumps).
    * The guard only ever serializes and paces, it never denies: with no console
    * open on the node the caps rule alone, which is the whole point.
+   *
+   * Asymmetry by design: a POWER op is interactive (a participant pressing
+   * start), so it serializes only against other power ops and never waits out
+   * a long clone or delete task; heavy ops yield to EVERYTHING, power
+   * included. Both share the pacing anchor, so a stop right after a clone
+   * start still leaves the node a breath between kicks.
    */
   private guardBlockedUntil(meta: GrantMeta): number | null {
     if (!this.opts.streamProtect || meta.node == null) return null
     if ((this.consoleNodes.get(meta.node) ?? 0) === 0) return null
-    if (this.heavyRunningOn(meta.node) > 0) return Infinity
+    const blockers =
+      meta.opClass === 'power'
+        ? this.runningOn(meta.node, ['power'])
+        : this.runningOn(meta.node, OP_CLASSES)
+    if (blockers > 0) return Infinity
     const at = (this.lastHeavyStart.get(meta.node) ?? 0) + this.opts.streamPacingMs
     return Date.now() >= at ? null : at
   }
@@ -479,7 +490,7 @@ export class Admission extends EventEmitter {
       for (const cls of OP_CLASSES) {
         for (const r of this.classes[cls].running.values()) if (r.upid) ours.add(r.upid)
       }
-      const counts: Record<OpClassName, number> = { clone: 0, delete: 0, suspend: 0 }
+      const counts: Record<OpClassName, number> = { clone: 0, delete: 0, suspend: 0, power: 0 }
       const consoles = new Map<string, number>()
       for (const t of tasks) {
         if (t.endtime) continue // finished, no longer contending
@@ -515,7 +526,7 @@ export class Admission extends EventEmitter {
       // an app behind a console that may have closed long ago.
       this.obPollErrors += 1
       if (this.obPollErrors >= 3) {
-        this.setOutOfBand({ clone: 0, delete: 0, suspend: 0 })
+        this.setOutOfBand({ clone: 0, delete: 0, suspend: 0, power: 0 })
         this.setConsoleNodes(new Map())
       }
       if (this.obPollErrors <= 3 || this.obPollErrors % 10 === 0) {

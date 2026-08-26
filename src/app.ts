@@ -1,9 +1,10 @@
 import { randomBytes, randomUUID } from 'node:crypto'
 import { createServer, type Server } from 'node:http'
 import type { FastifyInstance } from 'fastify'
+import { startAutoBackup } from './admin/backup.js'
 import { buildAdminServer } from './admin/server.js'
 import { Admission, type AdmissionOpts, type TaskFinishedEvent } from './admission/queue.js'
-import type { Config } from './config.js'
+import { POWER_CAP, type Config } from './config.js'
 import { getMeta, openDb, setMeta, type Db } from './db.js'
 import { IdAllocator, VlanAllocator } from './dataplane/allocator.js'
 import { VlanLeaseStore } from './dataplane/leases.js'
@@ -48,7 +49,9 @@ function priorityOrder(appPriority: Record<string, number>): string[] {
 
 function admissionOptsFrom(s: Settings): AdmissionOpts {
   return {
-    caps: { clone: s.cloneCap, delete: s.deleteCap, suspend: s.suspendCap },
+    // The power cap is a constant: the class exists for the stream guard, not
+    // for throttling (see POWER_CAP), so it is not an operator knob.
+    caps: { clone: s.cloneCap, delete: s.deleteCap, suspend: s.suspendCap, power: POWER_CAP },
     maxQueue: s.maxQueue,
     maxHoldMs: s.maxHoldMs,
     taskPollMs: s.taskPollMs,
@@ -147,6 +150,10 @@ export async function createApp(
     settings,
   })
   const stopReaper = startVlanReaper(cluster, leases)
+  const stopAutoBackup = startAutoBackup(db, config.dataDir, () => ({
+    intervalHours: settings.all.autoBackupIntervalHours,
+    keep: settings.all.autoBackupKeep,
+  }))
 
   const dataHandler = createDataPlaneHandler({
     config,
@@ -205,6 +212,7 @@ export async function createApp(
     if (closed) return
     closed = true
     stopReaper()
+    stopAutoBackup()
     admission.stop()
     health.stop()
     // Release the cluster lock FIRST: server close can be slowed down by

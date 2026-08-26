@@ -34,6 +34,11 @@ const CLONE_RE = /^\/api2\/(?:json|extjs)\/nodes\/([^/]+)\/(?:qemu|lxc)\/(\d+)\/
 const DELETE_RE = /^\/api2\/(?:json|extjs)\/nodes\/([^/]+)\/(?:qemu|lxc)\/(\d+)\/?$/
 const SUSPEND_RE =
   /^\/api2\/(?:json|extjs)\/nodes\/([^/]+)\/(?:qemu|lxc)\/(\d+)\/status\/suspend\/?$/
+// Power ops: near-free for the node and interactive for the user, so their
+// class carries a virtually unlimited cap; it exists so the stream guard can
+// serialize them while a console is live (a stop burst measurably stutters).
+const POWER_RE =
+  /^\/api2\/(?:json|extjs)\/nodes\/([^/]+)\/(?:qemu|lxc)\/(\d+)\/status\/(?:start|stop|shutdown|reset|resume)\/?$/
 // A disk/volume move can attach onto a DIFFERENT target VM named in the body.
 const MOVE_RE =
   /^\/api2\/(?:json|extjs)\/nodes\/([^/]+)\/(?:qemu\/(\d+)\/move_disk|lxc\/(\d+)\/move_volume)\/?$/
@@ -108,6 +113,8 @@ export function classify(method: string, pathname: string): Classified {
       out.bodyTarget = 'newid'
     } else if (SUSPEND_RE.test(pathname)) {
       out.opClass = 'suspend'
+    } else if (POWER_RE.test(pathname)) {
+      out.opClass = 'power'
     } else if (MOVE_RE.test(pathname)) {
       // Not a contended pool op, but it names a target VM in the body that must
       // be scope-checked and template-checked before forwarding.

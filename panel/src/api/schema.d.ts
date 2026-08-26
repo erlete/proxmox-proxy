@@ -587,6 +587,83 @@ export interface paths {
     patch?: never
     trace?: never
   }
+  '/api/backup-token': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get: {
+      parameters: {
+        query?: never
+        header?: never
+        path?: never
+        cookie?: never
+      }
+      requestBody?: never
+      responses: {
+        /** @description Default Response */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': {
+              configured: boolean
+            }
+          }
+        }
+      }
+    }
+    put?: never
+    post: {
+      parameters: {
+        query?: never
+        header?: never
+        path?: never
+        cookie?: never
+      }
+      requestBody?: never
+      responses: {
+        /** @description Default Response */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': {
+              token: string
+            }
+          }
+        }
+      }
+    }
+    delete: {
+      parameters: {
+        query?: never
+        header?: never
+        path?: never
+        cookie?: never
+      }
+      requestBody?: never
+      responses: {
+        /** @description Default Response */
+        204: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': unknown
+          }
+        }
+      }
+    }
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
   '/api/restore': {
     parameters: {
       query?: never
@@ -736,6 +813,8 @@ export interface paths {
                 sessionTtlHours: number
                 streamProtect: boolean
                 streamPacingMs: number
+                autoBackupIntervalHours: number
+                autoBackupKeep: number
                 publicWsUrl: string
                 appPriority: {
                   [key: string]: number
@@ -755,6 +834,8 @@ export interface paths {
                 sessionTtlHours: number
                 streamProtect: boolean
                 streamPacingMs: number
+                autoBackupIntervalHours: number
+                autoBackupKeep: number
                 publicWsUrl: string
                 appPriority: {
                   [key: string]: number
@@ -788,6 +869,8 @@ export interface paths {
             sessionTtlHours?: number
             streamProtect?: boolean
             streamPacingMs?: number
+            autoBackupIntervalHours?: number
+            autoBackupKeep?: number
             publicWsUrl?: string
             appPriority?: {
               [key: string]: number
@@ -817,6 +900,8 @@ export interface paths {
                 sessionTtlHours: number
                 streamProtect: boolean
                 streamPacingMs: number
+                autoBackupIntervalHours: number
+                autoBackupKeep: number
                 publicWsUrl: string
                 appPriority: {
                   [key: string]: number
@@ -836,6 +921,8 @@ export interface paths {
                 sessionTtlHours: number
                 streamProtect: boolean
                 streamPacingMs: number
+                autoBackupIntervalHours: number
+                autoBackupKeep: number
                 publicWsUrl: string
                 appPriority: {
                   [key: string]: number
@@ -903,6 +990,8 @@ export interface paths {
                 sessionTtlHours: number
                 streamProtect: boolean
                 streamPacingMs: number
+                autoBackupIntervalHours: number
+                autoBackupKeep: number
                 publicWsUrl: string
                 appPriority: {
                   [key: string]: number
@@ -922,6 +1011,8 @@ export interface paths {
                 sessionTtlHours: number
                 streamProtect: boolean
                 streamPacingMs: number
+                autoBackupIntervalHours: number
+                autoBackupKeep: number
                 publicWsUrl: string
                 appPriority: {
                   [key: string]: number

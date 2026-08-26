@@ -31,12 +31,14 @@ function build(
   }> = {},
 ): Admission {
   return new Admission(null, {
-    caps: { clone: overrides.cloneCap ?? 1, delete: 1, suspend: 1 },
+    caps: { clone: overrides.cloneCap ?? 1, delete: 1, suspend: 1, power: 64 },
     maxQueue: overrides.maxQueue ?? 8,
     maxHoldMs: overrides.maxHoldMs ?? 200,
     taskPollMs: 1_000_000,
     taskTimeoutMs: 1_000_000,
     priorityApps: overrides.priorityApps ?? [],
+    streamProtect: true,
+    streamPacingMs: 0,
   })
 }
 

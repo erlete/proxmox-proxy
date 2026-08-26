@@ -1,3 +1,4 @@
+import { randomBytes } from 'node:crypto'
 import {
   createReadStream,
   existsSync,
@@ -16,12 +17,12 @@ import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest }
 import type { Admission } from '../admission/queue.js'
 import type { Config } from '../config.js'
 import type { VlanLeaseStore } from '../dataplane/leases.js'
-import { RESTORE_PENDING_FILE, type Db } from '../db.js'
+import { getMeta, setMeta, RESTORE_PENDING_FILE, type Db } from '../db.js'
 import { createBackupSnapshot, validateBackupFile } from './backup.js'
 import { rangesOverlap, vmidAllowed, type KeyStore, type VmidRange } from '../keys/store.js'
 import { log } from '../log.js'
 import type { OpsLog } from '../ops.js'
-import { verifyPassword } from '../password.js'
+import { hashPassword, verifyPassword } from '../password.js'
 import { signSession, verifySession } from '../session.js'
 import { SETTINGS_DEFAULTS, type Settings, type SettingsStore } from '../settings.js'
 import { ClusterSnapshot, type ClusterVm } from '../upstream/cluster.js'
@@ -36,6 +37,8 @@ import {
   LeasesReply,
   LoginBody,
   MeReply,
+  BackupTokenReply,
+  BackupTokenStatusReply,
   OperationsQuery,
   OperationsReply,
   QueuesReply,
@@ -137,6 +140,9 @@ export async function buildAdminServer(deps: AdminDeps): Promise<FastifyInstance
     if (req.method === 'POST' && req.url === '/api/session') return true
     if (req.method === 'GET' && (req.url === '/api/health' || req.url === '/api/openapi.json'))
       return true
+    // The backup download does its own auth (panel session OR pull token), so
+    // an external cron can fetch it without a login flow.
+    if (req.method === 'GET' && req.url === '/api/backup') return true
     return false
   }
 
@@ -327,10 +333,19 @@ export async function buildAdminServer(deps: AdminDeps): Promise<FastifyInstance
     },
   )
 
+  const BACKUP_TOKEN_META = 'backup_token_hash'
+
   // Full backup: a consistent online snapshot of the entire durable state
   // (keys with their hashes, settings, operation history, VLAN leases, panel
   // secrets) as one SQLite file. Boot-level environment config is NOT in it.
-  app.get('/api/backup', async (_req, reply) => {
+  // Auth: a panel session, or the dedicated pull token (for an external cron
+  // that ships the file off-host, the disaster-recovery leg).
+  app.get('/api/backup', async (req, reply) => {
+    const session = verifySession(req.cookies[SESSION_COOKIE] ?? '', config.sessionSecret)
+    const pull = req.headers['x-backup-token']
+    const hash = getMeta(db, BACKUP_TOKEN_META)
+    const tokenOk = typeof pull === 'string' && hash != null && verifyPassword(pull, hash)
+    if (!session && !tokenOk) return reply.code(401).send({ message: 'unauthorized' })
     const path = createBackupSnapshot(db, config.dataDir)
     const stamp = new Date().toISOString().slice(0, 19).replaceAll(':', '-')
     const stream = createReadStream(path)
@@ -346,6 +361,25 @@ export async function buildAdminServer(deps: AdminDeps): Promise<FastifyInstance
       .header('content-disposition', `attachment; filename="proxmox-proxy-backup-${stamp}.db"`)
       .header('content-length', String(statSync(path).size))
       .send(stream)
+  })
+
+  // Pull token lifecycle: generate (hash stored, value shown once), inspect
+  // whether one exists, disable. The token authorizes GET /api/backup only.
+  app.get(
+    '/api/backup-token',
+    { schema: { response: { 200: BackupTokenStatusReply } } },
+    async () => ({ configured: getMeta(db, BACKUP_TOKEN_META) != null }),
+  )
+  app.post('/api/backup-token', { schema: { response: { 200: BackupTokenReply } } }, async () => {
+    const token = `pbt_${randomBytes(24).toString('base64url')}`
+    setMeta(db, BACKUP_TOKEN_META, hashPassword(token))
+    log.info('backup pull token generated')
+    return { token }
+  })
+  app.delete('/api/backup-token', { schema: { response: { 204: {} } } }, async (_req, reply) => {
+    db.prepare('DELETE FROM meta WHERE key = ?').run(BACKUP_TOKEN_META)
+    log.info('backup pull token disabled')
+    return reply.code(204).send()
   })
 
   // Full restore: FULL OVERWRITE of the durable state with an uploaded backup.

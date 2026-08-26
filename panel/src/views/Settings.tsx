@@ -49,6 +49,16 @@ const GROUPS: { title: string; fields: FieldDef[] }[] = [
       { key: 'opsRingMax', label: 'Operation log size', hint: 'rows kept in the history ring' },
       { key: 'sessionTtlHours', label: 'Session TTL (h)', hint: 'panel login lifetime' },
       { key: 'publicWsUrl', label: 'Websocket base URL', hint: 'empty = the upstream origin' },
+      {
+        key: 'autoBackupIntervalHours',
+        label: 'Auto backup every (h)',
+        hint: 'rotating snapshot interval',
+      },
+      {
+        key: 'autoBackupKeep',
+        label: 'Auto backups kept',
+        hint: 'snapshots retained in /data/backups; 0 disables',
+      },
     ],
   },
 ]
@@ -275,6 +285,35 @@ function BackupCard(): ReactElement {
   const [busy, setBusy] = useState(false)
   const [msg, setMsg] = useState<string | null>(null)
   const [err, setErr] = useState<string | null>(null)
+  const [tokenConfigured, setTokenConfigured] = useState(false)
+  const [freshToken, setFreshToken] = useState<string | null>(null)
+
+  useEffect(() => {
+    void fetch('/api/backup-token')
+      .then((r) => (r.ok ? r.json() : null))
+      .then((b: { configured: boolean } | null) => {
+        if (b) setTokenConfigured(b.configured)
+      })
+  }, [])
+
+  const generateToken = async (): Promise<void> => {
+    const res = await fetch('/api/backup-token', { method: 'POST' })
+    if (res.ok) {
+      const body = (await res.json()) as { token: string }
+      setFreshToken(body.token)
+      setTokenConfigured(true)
+    }
+  }
+
+  const disableToken = async (): Promise<void> => {
+    if (!window.confirm('Disable the backup pull token? Any external cron using it stops working.'))
+      return
+    const res = await fetch('/api/backup-token', { method: 'DELETE' })
+    if (res.ok || res.status === 204) {
+      setTokenConfigured(false)
+      setFreshToken(null)
+    }
+  }
 
   const restore = async (file: File): Promise<void> => {
     const ok = window.confirm(
@@ -350,6 +389,31 @@ function BackupCard(): ReactElement {
       </div>
       {msg && <span className="hint">{msg}</span>}
       {err && <div className="error">{err}</div>}
+      <p className="hint settings-note" style={{ marginTop: 14 }}>
+        Pull token: lets an external cron download the backup with a single header, no login flow.
+        The off-host copy is the disaster-recovery leg; the rotating snapshots in /data/backups
+        (General settings) only protect against corruption and operator error.
+      </p>
+      <div className="toolbar">
+        <button className="btn small" onClick={() => void generateToken()}>
+          {tokenConfigured ? 'Regenerate pull token' : 'Generate pull token'}
+        </button>
+        {tokenConfigured && (
+          <button className="btn small" onClick={() => void disableToken()}>
+            Disable
+          </button>
+        )}
+        {tokenConfigured && !freshToken && <span className="badge ok">configured</span>}
+      </div>
+      {freshToken && (
+        <div className="hint" style={{ marginTop: 8 }}>
+          Shown once, store it now: <code className="mono">{freshToken}</code>
+          <br />
+          <code className="mono">
+            {`curl -sf -H "X-Backup-Token: ${freshToken}" ${window.location.origin}/api/backup -o proxy-backup.db`}
+          </code>
+        </div>
+      )}
     </section>
   )
 }

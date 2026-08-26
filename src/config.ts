@@ -1,6 +1,15 @@
 import { randomUUID } from 'node:crypto'
 
-export const OP_CLASSES = ['clone', 'delete', 'suspend'] as const
+export const OP_CLASSES = ['clone', 'delete', 'suspend', 'power'] as const
+
+/**
+ * Cap for the power class (start/stop/shutdown/reset/resume). Effectively
+ * unlimited: power ops are interactive and near-free for the node, so with
+ * no console open they pass straight through. The class exists ONLY so the
+ * stream guard can serialize and pace them while someone is watching, which
+ * is the one window where a burst of stops measurably stutters a stream.
+ */
+export const POWER_CAP = 64
 export type OpClassName = (typeof OP_CLASSES)[number]
 
 /**

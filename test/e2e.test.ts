@@ -154,11 +154,13 @@ function fakeUpstream(): Server {
         return json(200, upid)
       }
 
-      // Power ops (start/stop/shutdown/reset/suspend) for group operations.
+      // Power ops (start/stop/shutdown/reset/suspend). The UPID must be unique
+      // per CALL (not per vmid): admission holds a slot per task, and a reused
+      // UPID already marked stopped would release the new slot instantly.
       const power = /^\/api2\/json\/nodes\/n1\/qemu\/(\d+)\/status\/(\w+)$/.exec(p)
       if (power && req.method === 'POST' && power[2] !== 'current') {
         powerCalls.push({ vmid: Number(power[1]), action: power[2] })
-        return json(200, `UPID:n1:00p${cloneCount}:0:0:qm${power[2]}:${power[1]}:root@pam:`)
+        return json(200, `UPID:n1:0p${powerCalls.length}:0:0:qm${power[2]}:${power[1]}:root@pam:`)
       }
 
       // VM config read/write (linked-clone reads net0, then retags it).
@@ -668,6 +670,72 @@ test('stream guard: a live console serializes heavy ops; none = caps apply', asy
     stoppedTasks.add(((await c1.json()) as { data: string }).data)
     stoppedTasks.add(((await c2.json()) as { data: string }).data)
     await waitFor(async () => (await cloneClass()).running.length === 0)
+  } finally {
+    clusterTasks = []
+  }
+})
+
+test('power ops are free with no console and serialized under the guard', async () => {
+  const power = (vmid: number): Promise<Response> =>
+    fetch(`${dataUrl}/api2/json/nodes/n1/qemu/${vmid}/status/stop`, {
+      method: 'POST',
+      headers: { authorization: appToken },
+      body: '',
+    })
+  const powerClass = async (): Promise<{ running: unknown[]; waiting: unknown[] }> => {
+    const snap = await queuesSnapshot()
+    return snap.classes.find((c) => c.name === 'power') as {
+      running: unknown[]
+      waiting: unknown[]
+    }
+  }
+  const upidOf = async (res: Response): Promise<string> =>
+    ((await res.json()) as { data: string }).data
+
+  // No console: two concurrent stops run CONCURRENTLY (the cap is near
+  // unlimited; the class only exists for the guard).
+  const [p1, p2] = await Promise.all([power(1100100), power(1100101)])
+  assert.equal(p1.status, 200)
+  assert.equal(p2.status, 200)
+  await waitFor(async () => (await powerClass()).running.length === 2)
+  stoppedTasks.add(await upidOf(p1))
+  stoppedTasks.add(await upidOf(p2))
+  await waitFor(async () => (await powerClass()).running.length === 0)
+
+  try {
+    // Console live: stops on that node serialize (the measured stutter source).
+    clusterTasks = [
+      {
+        upid: 'UPID:n1:0100:0:0:vncproxy:1100100:svc@pve:',
+        type: 'vncproxy',
+        node: 'n1',
+        id: '1100100',
+      },
+    ]
+    await waitFor(async () => {
+      const snap = await queuesSnapshot()
+      return (
+        (snap as { consoles?: { node: string }[] }).consoles?.some((c) => c.node === 'n1') === true
+      )
+    })
+
+    const first = await power(1100100)
+    assert.equal(first.status, 200)
+    const upidA = await upidOf(first)
+    await waitFor(async () => (await powerClass()).running.length === 1)
+
+    const secondPromise = power(1100101)
+    await waitFor(async () => (await powerClass()).waiting.length === 1)
+    assert.equal((await powerClass()).running.length, 1)
+
+    stoppedTasks.add(upidA)
+    const second = await secondPromise
+    assert.equal(second.status, 200)
+    stoppedTasks.add(await upidOf(second))
+    await waitFor(async () => {
+      const cls = await powerClass()
+      return cls.running.length === 0 && cls.waiting.length === 0
+    })
   } finally {
     clusterTasks = []
   }

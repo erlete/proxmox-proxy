@@ -371,6 +371,20 @@ ser la del origen salvo que el `.env` la fije), y los arriendos de VLAN de pods 
 en el cluster los libera el recolector con sus salvaguardas de siempre. Restaura siempre sobre una
 versión del proxy igual o más nueva que la que produjo la copia.
 
+Dos piezas más completan la recuperación de desastres:
+
+- **Snapshots automáticos rotatorios** (Settings, «Auto backup every» y «Auto backups kept»): un
+  snapshot cada N horas en `/data/backups/`, conservando los últimos K (por defecto cada 24 h,
+  7 copias; 0 desactiva). Viven en el mismo volumen que la base, así que protegen contra
+  corrupción y errores de operación, no contra la pérdida del host.
+- **Token de extracción** (Settings, «Generate pull token»): autoriza únicamente la descarga del
+  backup con una cabecera, sin flujo de login, para que un cron externo se lleve la copia fuera
+  del host. Se muestra una sola vez (solo se guarda su hash) y se revoca desde el mismo sitio.
+
+  ```sh
+  curl -sf -H "X-Backup-Token: pbt_..." https://<proxy>/api/backup -o proxy-backup.db
+  ```
+
 ## Migración desde acceso directo al cluster
 
 Una aplicación que hoy habla directamente con Proxmox y pasa a consumir el proxy debe **quitar** lo
