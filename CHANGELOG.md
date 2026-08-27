@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.11.2](https://github.com/DLT-Code/proxmox-proxy/compare/v0.11.1...v0.11.2) (2026-08-27)
+
+
+### Bug Fixes
+
+* **admission:** ignore consoles on reserved vmids in the stream guard ([b7fc813](https://github.com/DLT-Code/proxmox-proxy/commit/b7fc813e9ceffe4ab9e2c176448c235e52726b49))
+
 ## [0.11.1](https://github.com/DLT-Code/proxmox-proxy/compare/v0.11.0...v0.11.1) (2026-08-27)
 
 
