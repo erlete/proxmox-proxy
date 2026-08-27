@@ -896,9 +896,28 @@ export function createDataPlaneHandler(deps: DataPlaneDeps): RequestListener {
         return
       }
 
+      // A refused native call is still RECORDED: an app hitting a route with
+      // the wrong method is exactly the kind of thing a later forensic needs
+      // to see in the ledger (a 405 that left no trace cost a real diagnosis).
+      const recordRefusal = (status: number, note: string): void => {
+        ops.record({
+          keyName: key.name,
+          method: req.method ?? '',
+          path: url.pathname,
+          opClass: null,
+          vmid: null,
+          status,
+          queueMs: null,
+          durationMs: null,
+          upid: null,
+          note,
+        })
+      }
+
       if (url.pathname === '/proxy/console-session') {
         if (req.method !== 'POST') {
           sendJson(res, 405, { message: 'method not allowed' })
+          recordRefusal(405, 'method-not-allowed')
           return
         }
         await handleConsoleSession(req, res, key)
@@ -930,6 +949,7 @@ export function createDataPlaneHandler(deps: DataPlaneDeps): RequestListener {
       if (url.pathname === '/proxy/linked-clone') {
         if (req.method !== 'POST') {
           sendJson(res, 405, { message: 'method not allowed' })
+          recordRefusal(405, 'method-not-allowed')
           return
         }
         await handleLinkedClone(req, res, key)
@@ -946,12 +966,14 @@ export function createDataPlaneHandler(deps: DataPlaneDeps): RequestListener {
         if (req.method === 'POST' && action) {
           if (!GROUP_ACTIONS.includes(action as GroupAction)) {
             sendJson(res, 400, { message: `unknown group action: ${action}` })
+            recordRefusal(400, `unknown-group-action ${action}`)
             return
           }
           await handleGroupPower(req, res, key, vlan, action as GroupAction)
           return
         }
         sendJson(res, 405, { message: 'method not allowed' })
+        recordRefusal(405, 'method-not-allowed')
         return
       }
 

@@ -313,18 +313,29 @@ export class LinkedCloneService {
   ): Promise<GroupDestroyResult> {
     const { admission, cluster, ids, leases, upstream } = this.deps
     const lease = this.resolveGroup(key, vlan)
-    // A FRESH snapshot (never the 5s cache) so a member cannot be mistaken for
-    // gone from a stale read. An empty snapshot is a transient cluster fault
-    // (quorum loss returns [] with a 200), NOT "everything was deleted": refuse
-    // to act, because freeing this VLAN with members still alive would let it be
-    // re-leased to another tenant (an isolation breach), the very thing the
-    // lease exists to prevent.
-    const snapshot = await cluster.vms(true)
-    if (snapshot.length === 0) {
-      throw new LinkedCloneError('cannot verify the cluster right now, retry shortly', 503)
-    }
-    const byId = new Map(snapshot.map((vm) => [vm.vmid, vm]))
     const node = encodeURIComponent(lease.node)
+    // Existence comes from the NODE-LOCAL guest list, never /cluster/resources:
+    // the cluster view lags behind for freshly created VMs (a pod destroyed
+    // seconds after provisioning had its young member reported absent, counted
+    // as "already gone" and left RUNNING while the VLAN was freed). The node
+    // list is derived from the node's own config files, so a VM created one
+    // second ago is in it. An empty list is still treated as a transient fault
+    // rather than "everything was deleted": freeing this VLAN with members
+    // alive would let it be re-leased to another tenant (an isolation breach),
+    // the very thing the lease exists to prevent.
+    const guests = await upstream.api<{ vmid: number; status?: string; template?: number }[]>(
+      'GET',
+      `/nodes/${node}/qemu`,
+    )
+    if (guests.length === 0) {
+      throw new LinkedCloneError('cannot verify the node right now, retry shortly', 503)
+    }
+    const byId = new Map(
+      guests.map((vm) => [
+        vm.vmid,
+        { vmid: vm.vmid, status: vm.status ?? 'stopped', template: vm.template === 1 },
+      ]),
+    )
     const destroyed: number[] = []
     const failed: number[] = []
     for (const vmid of lease.vmids) {

@@ -33,6 +33,9 @@ const powerCalls: { vmid: number; action: string }[] = []
 // Cluster-wide task list served to the proxy's backstop poll. Tests push a
 // running vncproxy row here to simulate a live console (the stream guard).
 let clusterTasks: Record<string, unknown>[] = []
+// VMIDs hidden from /cluster/resources ONLY: simulates the propagation lag a
+// freshly created VM shows in the cluster view while the node already has it.
+const omitFromResources = new Set<number>()
 
 function fakeUpstream(): Server {
   return createServer((req, res) => {
@@ -73,16 +76,21 @@ function fakeUpstream(): Server {
               status: 'running',
               type: 'qemu',
             })),
-          ].filter((vm) => !deletedVms.has(vm.vmid)),
+          ].filter((vm) => !deletedVms.has(vm.vmid) && !omitFromResources.has(vm.vmid)),
         )
       }
 
-      // Guest list on the node (filtered to the key's range by the proxy).
+      // Guest list on the node (node-local, config-derived: no propagation lag,
+      // so created VMs appear here even when omitFromResources hides them from
+      // the cluster view). The group destroy trusts THIS list for existence.
       if (p === '/api2/json/nodes/n1/qemu' && req.method === 'GET') {
         return json(200, [
           { vmid: 1100001, name: 'tmpl-a', status: 'stopped', template: 1 },
           { vmid: 1100100, name: 'app-vm', status: 'running' },
           { vmid: 4242, name: 'stray-vm', status: 'stopped' },
+          ...[...createdVms]
+            .filter((vmid) => !deletedVms.has(vmid))
+            .map((vmid) => ({ vmid, name: `pod-${vmid}`, status: 'running' })),
         ])
       }
 
@@ -1036,6 +1044,58 @@ test('group ops: one call powers and destroys the whole linked group', async () 
     const lBody = (await leases.json()) as { leases: { vlan: number }[] }
     assert.ok(!lBody.leases.some((l) => l.vlan === grp.vlan), 'lease freed after destroy')
   } finally {
+    autoCompleteTasks = false
+    await fetch(`${adminUrl}/api/settings`, {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json', cookie },
+      body: JSON.stringify({ linkedVlanRange: null }),
+    })
+  }
+})
+
+test('group destroy trusts the node list, not the lagging cluster view', async () => {
+  // Regression: /cluster/resources lags for freshly created VMs. A pod
+  // destroyed seconds after provisioning had its young member reported absent
+  // by the cluster view, counted as "already gone" and left RUNNING while the
+  // VLAN was freed. The node-local guest list has no such lag, so a member
+  // hidden from the cluster view must still be genuinely deleted.
+  await fetch(`${adminUrl}/api/settings`, {
+    method: 'PUT',
+    headers: { 'content-type': 'application/json', cookie },
+    body: JSON.stringify({ linkedVlanRange: [1000, 1099] }),
+  })
+  autoCompleteTasks = true
+  try {
+    const created = await fetch(`${dataUrl}/proxy/linked-clone`, {
+      method: 'POST',
+      headers: { authorization: appToken, 'content-type': 'application/json' },
+      body: JSON.stringify({ node: 'n1', clones: [{ template: 1100001 }, { template: 1100001 }] }),
+    })
+    assert.equal(created.status, 200)
+    const grp = (await created.json()) as { vlan: number; clones: { vmid: number }[] }
+    const vmids = grp.clones.map((c) => c.vmid).sort((a, b) => a - b)
+
+    // The youngest member has not propagated to the cluster view yet.
+    omitFromResources.add(vmids[1])
+
+    const destroy = await fetch(`${dataUrl}/proxy/linked-clone/${grp.vlan}`, {
+      method: 'DELETE',
+      headers: { authorization: appToken },
+    })
+    assert.equal(destroy.status, 200)
+    const dBody = (await destroy.json()) as { destroyed: number[] }
+    assert.deepEqual(
+      [...dBody.destroyed].sort((a, b) => a - b),
+      vmids,
+    )
+    // BOTH members really reached the cluster's delete endpoint: the hidden
+    // one was not silently counted as gone.
+    assert.ok(
+      vmids.every((v) => deletedVms.has(v)),
+      'the member hidden from the cluster view was genuinely deleted',
+    )
+  } finally {
+    omitFromResources.clear()
     autoCompleteTasks = false
     await fetch(`${adminUrl}/api/settings`, {
       method: 'PUT',
