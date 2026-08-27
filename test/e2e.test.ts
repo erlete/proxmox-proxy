@@ -803,7 +803,12 @@ test('stream guard ignores consoles on reserved vmids', async () => {
   const tuned = await fetch(`${adminUrl}/api/settings`, {
     method: 'PUT',
     headers: { 'content-type': 'application/json', cookie },
-    body: JSON.stringify({ reserved: [[100, 199]], cloneCap: 2, streamPacingMs: 0, taskPollMs: 250 }),
+    body: JSON.stringify({
+      reserved: [[100, 199]],
+      cloneCap: 2,
+      streamPacingMs: 0,
+      taskPollMs: 250,
+    }),
   })
   assert.equal(tuned.status, 200)
 
@@ -838,7 +843,9 @@ test('stream guard ignores consoles on reserved vmids', async () => {
     ]
     await waitFor(async () => {
       const s = await queuesSnapshot()
-      return (s as { consoles?: { node: string }[] }).consoles?.some((c) => c.node === 'n1') === true
+      return (
+        (s as { consoles?: { node: string }[] }).consoles?.some((c) => c.node === 'n1') === true
+      )
     })
   } finally {
     clusterTasks = []

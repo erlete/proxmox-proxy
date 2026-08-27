@@ -248,7 +248,12 @@ test('stream guard ignores consoles on reserved vmids', async () => {
   // Two consoles on n1: one on a reserved infra vmid, one on an app vmid.
   const tasks = [
     { upid: 'UPID:n1:4:4:4:vncproxy:150:root@pam:', type: 'vncproxy', node: 'n1', id: '150' },
-    { upid: 'UPID:n1:5:5:5:vncproxy:1100100:svc@pve:', type: 'vncproxy', node: 'n1', id: '1100100' },
+    {
+      upid: 'UPID:n1:5:5:5:vncproxy:1100100:svc@pve:',
+      type: 'vncproxy',
+      node: 'n1',
+      id: '1100100',
+    },
   ]
   const upstream = { api: () => Promise.resolve(tasks) } as unknown as Upstream
   const admission = new Admission(upstream, {
