@@ -344,6 +344,7 @@ export interface paths {
             name: string
             vmidRanges: [number, number][]
             comment?: string
+            allowSharedRange?: boolean
           }
         }
       }

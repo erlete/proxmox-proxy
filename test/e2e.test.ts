@@ -576,12 +576,12 @@ test('reserved ranges are enforced as configuration, not per-operation', async (
   assert.equal(clear.status, 200)
 })
 
-test('app ranges may overlap each other; only reserved is exclusive', async () => {
-  // Two apps sharing (overlapping) VMID ranges are BOTH accepted: a VMID does
-  // not belong to exactly one app. The same logical app driven from several
-  // environments (prod plus local dev) shares one cluster range on purpose,
-  // and the allocator assigns from real occupancy so co-located apps never
-  // double-claim. Only a reserved range is exclusive against apps.
+test('range overlap between apps is default-deny with explicit consent', async () => {
+  // Accidental sharing is how one platform destroys another's machines (the
+  // LigaFP incident: six keys created with identical ranges), so an overlap
+  // with a live key is refused NAMING the clash. Deliberate sharing (the same
+  // logical service from several environments) stays possible, but it must be
+  // said with allowSharedRange, never stumbled into.
   const first = await fetch(`${adminUrl}/api/keys`, {
     method: 'POST',
     headers: { 'content-type': 'application/json', cookie },
@@ -589,12 +589,50 @@ test('app ranges may overlap each other; only reserved is exclusive', async () =
   })
   assert.equal(first.status, 201)
 
-  const second = await fetch(`${adminUrl}/api/keys`, {
+  const refused = await fetch(`${adminUrl}/api/keys`, {
     method: 'POST',
     headers: { 'content-type': 'application/json', cookie },
     body: JSON.stringify({ name: 'app-overlap-b', vmidRanges: [[1500050, 1500150]] }),
   })
-  assert.equal(second.status, 201)
+  assert.equal(refused.status, 400)
+  const refusal = (await refused.json()) as { message: string }
+  assert.match(refusal.message, /app-overlap-a/)
+  assert.match(refusal.message, /allowSharedRange/)
+
+  const consented = await fetch(`${adminUrl}/api/keys`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', cookie },
+    body: JSON.stringify({
+      name: 'app-overlap-b',
+      vmidRanges: [[1500050, 1500150]],
+      allowSharedRange: true,
+    }),
+  })
+  assert.equal(consented.status, 201)
+
+  // The flag never overrides the reserved boundary.
+  const reservedSet = await fetch(`${adminUrl}/api/settings`, {
+    method: 'PUT',
+    headers: { 'content-type': 'application/json', cookie },
+    body: JSON.stringify({ reserved: [[1600000, 1600099]] }),
+  })
+  assert.equal(reservedSet.status, 200)
+  const reservedClash = await fetch(`${adminUrl}/api/keys`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', cookie },
+    body: JSON.stringify({
+      name: 'app-overlap-c',
+      vmidRanges: [[1600050, 1600150]],
+      allowSharedRange: true,
+    }),
+  })
+  assert.equal(reservedClash.status, 400)
+  const clear = await fetch(`${adminUrl}/api/settings`, {
+    method: 'PUT',
+    headers: { 'content-type': 'application/json', cookie },
+    body: JSON.stringify({ reserved: [] }),
+  })
+  assert.equal(clear.status, 200)
 })
 
 test('stream guard: a live console serializes heavy ops; none = caps apply', async () => {
@@ -946,7 +984,7 @@ test('group ops: one call powers and destroys the whole linked group', async () 
       await fetch(`${adminUrl}/api/keys`, {
         method: 'POST',
         headers: { 'content-type': 'application/json', cookie },
-        body: JSON.stringify({ name: 'app-two', vmidRanges: [[1500000, 1500099]] }),
+        body: JSON.stringify({ name: 'app-two', vmidRanges: [[1700000, 1700099]] }),
       })
     ).json()) as { token: string }
     const foreignDestroy = await fetch(`${dataUrl}/proxy/linked-clone/${grp.vlan}`, {

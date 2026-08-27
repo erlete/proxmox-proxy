@@ -250,16 +250,31 @@ export async function buildAdminServer(deps: AdminDeps): Promise<FastifyInstance
     async (req, reply) => {
       const { name, vmidRanges, comment } = req.body
       if (keys.get(name)) return reply.code(409).send({ message: `key already exists: ${name}` })
-      // Reserved ranges are the only hard boundary: they are enforced as
+      // Reserved ranges are a hard boundary: they are enforced as
       // configuration, not per-operation, so an app range may never include a
-      // reserved VMID. App ranges MAY overlap each other on purpose (the same
-      // logical app driven from several environments, e.g. prod plus local dev,
-      // shares one cluster range); the allocator assigns from real occupancy so
-      // co-located apps never double-claim a VMID. The trade-off is that
-      // overlapping apps see each other's VMs in the shared band (opacity is
-      // per-range), which is the intended behaviour for those environments.
+      // reserved VMID, with no override.
       if (rangesOverlap(vmidRanges as VmidRange[], settings.reservedRanges)) {
         return reply.code(400).send({ message: 'vmid ranges overlap a reserved range' })
+      }
+      // Overlap with another live key is DEFAULT-DENY with explicit consent.
+      // Accidental sharing is how one platform destroys another's machines
+      // (per-VM ops in the shared band see the sister app's VMs as their own,
+      // the LigaFP incident); deliberate sharing (the same logical service
+      // from several environments, e.g. prod plus local dev) stays possible
+      // because the allocator assigns from real occupancy and never
+      // double-claims, but it must be SAID (`allowSharedRange`), never
+      // stumbled into.
+      if (req.body.allowSharedRange !== true) {
+        const clash = keys
+          .list()
+          .find((k) => k.enabled && rangesOverlap(vmidRanges as VmidRange[], k.vmidRanges))
+        if (clash) {
+          return reply.code(400).send({
+            message:
+              `vmid ranges overlap the ranges of key "${clash.name}"; ` +
+              'set allowSharedRange to share a range deliberately',
+          })
+        }
       }
       try {
         const token = keys.create(name, vmidRanges as VmidRange[], comment ?? '')

@@ -336,12 +336,18 @@ Reglas que el operador debe respetar al configurar el proxy para una aplicación
   siempre dentro del mismo rango asignado a esa aplicación.
 - **Los reservados son configuración, no bloqueo por operación.** Los rangos o VMIDs reservados
   (en Settings) son una restricción de configuración: el proxy no permite crear una clave cuyo rango
-  solape un reservado, ni añadir un reservado que solape el rango de una clave existente. El propio
-  alcance de cada clave ya impide operar fuera; los reservados se ven en el inventario. Dos claves
-  **sí** pueden solapar rangos entre sí (la misma aplicación lógica desde varios entornos, por
-  ejemplo producción y desarrollo local, comparte un rango del cluster): el asignador reparte desde
-  la ocupación real, así que nunca se duplica un VMID, y las aplicaciones solapadas se ven las VMs
-  de la banda común (la opacidad es por rango).
+  solape un reservado, ni añadir un reservado que solape el rango de una clave existente, sin
+  excepción. El propio alcance de cada clave ya impide operar fuera; los reservados se ven en el
+  inventario.
+- **El solape de rangos entre claves se rechaza por defecto y requiere consentimiento explícito.**
+  Crear una clave cuyo rango pise el de otra viva devuelve 400 nombrando a la clave en conflicto.
+  Compartir rango a propósito (el mismo servicio lógico desde varios entornos, por ejemplo
+  producción y desarrollo local) sigue siendo posible marcando `allowSharedRange` (el checkbox del
+  panel): el asignador reparte desde la ocupación real y nunca duplica un VMID. La razón del
+  rechazo por defecto es que el solape ACCIDENTAL es la forma de que una plataforma destruya las
+  máquinas de otra: en banda compartida cada aplicación ve las VMs de la otra como propias (la
+  opacidad es por rango), y una limpieza o reconciliación de una arrasa a la hermana. Compartir
+  rango debe decirse, nunca tropezarse.
 - **El rango de VLAN de clonación enlazada** (`linkedVlanRange` en Settings) es el pool de tags
   802.1q del que el proxy arrienda un VLAN por grupo. Debe **no colisionar** con los tags que ya
   llevan por defecto las VMs. Vacío significa clonación enlazada desactivada.

@@ -31,6 +31,12 @@ export const CreateKeyBody = Type.Object({
   name: Type.String({ minLength: 2, maxLength: 63, pattern: '^[a-z0-9][a-z0-9-]+$' }),
   vmidRanges: Type.Array(VmidRangeSchema, { minItems: 1 }),
   comment: Type.Optional(Type.String({ maxLength: 300 })),
+  /**
+   * Explicit consent to share a VMID range with another live key (the same
+   * logical service from several environments). Without it, an overlap is
+   * refused: accidental sharing lets one platform destroy another's machines.
+   */
+  allowSharedRange: Type.Optional(Type.Boolean()),
 })
 
 export const RotateKeyBody = Type.Object({

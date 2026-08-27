@@ -105,6 +105,7 @@ function CreateModal({
   const [name, setName] = useState('')
   const [rangesText, setRangesText] = useState('')
   const [comment, setComment] = useState('')
+  const [shared, setShared] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   const create = async (e: FormEvent): Promise<void> => {
@@ -116,7 +117,12 @@ function CreateModal({
       return
     }
     const { data, error: apiError } = await api.POST('/api/keys', {
-      body: { name, vmidRanges, ...(comment ? { comment } : {}) },
+      body: {
+        name,
+        vmidRanges,
+        ...(comment ? { comment } : {}),
+        ...(shared ? { allowSharedRange: true } : {}),
+      },
     })
     if (data) onDone(data.name, data.token)
     else setError((apiError as { message?: string } | undefined)?.message ?? 'creation failed')
@@ -152,6 +158,19 @@ function CreateModal({
             onChange={(e) => setComment(e.target.value)}
             placeholder="optional"
           />
+        </label>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <input
+            type="checkbox"
+            checked={shared}
+            onChange={(e) => setShared(e.target.checked)}
+            style={{ width: 'auto' }}
+          />
+          <span className="hint">
+            This app deliberately shares a VMID range with another key (same service, several
+            environments). Without this, an overlap is refused: accidental sharing lets one platform
+            destroy another's machines.
+          </span>
         </label>
         {error && <div className="error">{error}</div>}
         <div className="modal-actions">
