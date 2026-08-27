@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.11.1](https://github.com/DLT-Code/proxmox-proxy/compare/v0.11.0...v0.11.1) (2026-08-27)
+
+
+### Bug Fixes
+
+* **dataplane:** trust the node list for group-destroy existence, log refusals ([5768774](https://github.com/DLT-Code/proxmox-proxy/commit/57687741b61d3285f35106af3423b8a9c0d5a5be))
+
 ## [0.11.0](https://github.com/DLT-Code/proxmox-proxy/compare/v0.10.0...v0.11.0) (2026-08-27)
 
 
