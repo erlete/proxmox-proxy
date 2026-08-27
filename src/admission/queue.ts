@@ -1,5 +1,6 @@
 import { EventEmitter } from 'node:events'
 import { OP_CLASSES, type OpClassName } from '../config.js'
+import { vmidAllowed, type VmidRange } from '../keys/store.js'
 import { log } from '../log.js'
 import type { Upstream } from '../upstream/client.js'
 
@@ -79,6 +80,12 @@ export interface AdmissionOpts {
    */
   streamProtect: boolean
   streamPacingMs: number
+  /**
+   * Reserved vmid ranges (mirrored from settings). A console on a reserved
+   * vmid is operator work (an infra VM viewed from the Proxmox UI), not a
+   * broadcast, so it never engages the stream guard.
+   */
+  reservedRanges: VmidRange[]
 }
 
 export interface TaskFinishedEvent {
@@ -98,6 +105,8 @@ interface ClusterTask {
   upid: string
   type: string
   node?: string
+  /** Task subject: the vmid as a string for guest tasks, empty for node ones. */
+  id?: string
   /** Present only once the task has finished. */
   endtime?: number
 }
@@ -496,8 +505,13 @@ export class Admission extends EventEmitter {
         if (t.endtime) continue // finished, no longer contending
         // Live console (vncproxy family): the stream-guard signal. Counted for
         // every task source, so viewers that bypass the proxy still protect.
+        // Reserved vmids are the exception: those consoles are the operator
+        // looking at infra, and must not hold app operations back.
         if (CONSOLE_TASK_TYPES.has(t.type) && t.node) {
-          consoles.set(t.node, (consoles.get(t.node) ?? 0) + 1)
+          const vmid = Number(t.id)
+          if (!(Number.isInteger(vmid) && vmidAllowed(this.opts.reservedRanges, vmid))) {
+            consoles.set(t.node, (consoles.get(t.node) ?? 0) + 1)
+          }
           continue
         }
         const cls = TASK_TYPE_CLASS[t.type]

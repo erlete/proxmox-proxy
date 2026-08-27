@@ -39,6 +39,7 @@ function build(
     priorityApps: overrides.priorityApps ?? [],
     streamProtect: true,
     streamPacingMs: 0,
+    reservedRanges: [],
   })
 }
 
@@ -116,6 +117,7 @@ test('backstop discounts out-of-band cluster load and excludes vncproxy', async 
     taskPollMs: 1_000_000,
     taskTimeoutMs: 1_000_000,
     priorityApps: [],
+    reservedRanges: [],
   })
   await pollOutOfBand(admission)
 
@@ -144,6 +146,7 @@ test('backstop decays the discount to zero when the cluster is unreadable', asyn
     taskPollMs: 1_000_000,
     taskTimeoutMs: 1_000_000,
     priorityApps: [],
+    reservedRanges: [],
   })
   // Seed a stale discount, then confirm repeated read failures decay it away:
   // an unreadable cluster must never keep obstructing legitimate apps.
@@ -239,4 +242,38 @@ test('backstop does not count our own upid-less grants as out-of-band', async ()
   assert.equal(clone?.outOfBand, 0)
   assert.equal(clone?.effectiveCap, 2)
   g.release()
+})
+
+test('stream guard ignores consoles on reserved vmids', async () => {
+  // Two consoles on n1: one on a reserved infra vmid, one on an app vmid.
+  const tasks = [
+    { upid: 'UPID:n1:4:4:4:vncproxy:150:root@pam:', type: 'vncproxy', node: 'n1', id: '150' },
+    { upid: 'UPID:n1:5:5:5:vncproxy:1100100:svc@pve:', type: 'vncproxy', node: 'n1', id: '1100100' },
+  ]
+  const upstream = { api: () => Promise.resolve(tasks) } as unknown as Upstream
+  const admission = new Admission(upstream, {
+    caps: { clone: 2, delete: 1, suspend: 1, power: 64 },
+    maxQueue: 8,
+    maxHoldMs: 200,
+    taskPollMs: 1_000_000,
+    taskTimeoutMs: 1_000_000,
+    priorityApps: [],
+    streamProtect: true,
+    streamPacingMs: 0,
+    reservedRanges: [[100, 199]],
+  })
+  await pollOutOfBand(admission)
+  // Only the app console counts: the reserved one is operator work.
+  assert.deepEqual(admission.snapshot().consoles, [{ node: 'n1', count: 1 }])
+
+  // Drop the app console. The reserved one alone leaves the guard off, so
+  // cap 2 admits two clones concurrently on the "watched" node.
+  tasks.splice(1, 1)
+  await pollOutOfBand(admission)
+  assert.deepEqual(admission.snapshot().consoles, [])
+  const a = await admission.acquire(meta())
+  const b = await admission.acquire(meta('app-b'))
+  assert.equal(admission.snapshot().classes.find((c) => c.name === 'clone')?.running.length, 2)
+  a.release()
+  b.release()
 })

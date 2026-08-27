@@ -787,6 +787,70 @@ test('power ops are free with no console and serialized under the guard', async 
   }
 })
 
+test('stream guard ignores consoles on reserved vmids', async () => {
+  const clone = (newid: number): Promise<Response> =>
+    fetch(`${dataUrl}/api2/json/nodes/n1/qemu/1100050/clone`, {
+      method: 'POST',
+      headers: { authorization: appToken, 'content-type': 'application/x-www-form-urlencoded' },
+      body: `newid=${newid}`,
+    })
+  const cloneClass = async (): Promise<{ running: unknown[] }> => {
+    const snap = await queuesSnapshot()
+    return snap.classes.find((c) => c.name === 'clone') as { running: unknown[] }
+  }
+
+  // Reserve an infra band away from every key range.
+  const tuned = await fetch(`${adminUrl}/api/settings`, {
+    method: 'PUT',
+    headers: { 'content-type': 'application/json', cookie },
+    body: JSON.stringify({ reserved: [[100, 199]], cloneCap: 2, streamPacingMs: 0, taskPollMs: 250 }),
+  })
+  assert.equal(tuned.status, 200)
+
+  try {
+    // An operator console on a reserved vmid: it must NOT engage the guard.
+    clusterTasks = [
+      { upid: 'UPID:n1:0102:0:0:vncproxy:150:root@pam:', type: 'vncproxy', node: 'n1', id: '150' },
+    ]
+    // Give the poller a couple of cycles, then confirm the guard stayed off.
+    await new Promise((r) => setTimeout(r, 700))
+    const snap = await queuesSnapshot()
+    assert.equal((snap as { consoles?: unknown[] }).consoles?.length, 0)
+
+    // Cap 2 admits two clones CONCURRENTLY despite the live reserved console.
+    const [c1, c2] = await Promise.all([clone(1100170), clone(1100171)])
+    assert.equal(c1.status, 200)
+    assert.equal(c2.status, 200)
+    await waitFor(async () => (await cloneClass()).running.length === 2)
+    stoppedTasks.add(((await c1.json()) as { data: string }).data)
+    stoppedTasks.add(((await c2.json()) as { data: string }).data)
+    await waitFor(async () => (await cloneClass()).running.length === 0)
+
+    // Same node, console now on an APP vmid: proves the poll pipeline was
+    // live all along and only the reserved filter kept the guard off.
+    clusterTasks = [
+      {
+        upid: 'UPID:n1:0103:0:0:vncproxy:1100100:svc@pve:',
+        type: 'vncproxy',
+        node: 'n1',
+        id: '1100100',
+      },
+    ]
+    await waitFor(async () => {
+      const s = await queuesSnapshot()
+      return (s as { consoles?: { node: string }[] }).consoles?.some((c) => c.node === 'n1') === true
+    })
+  } finally {
+    clusterTasks = []
+    const restore = await fetch(`${adminUrl}/api/settings`, {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json', cookie },
+      body: JSON.stringify({ reserved: [] }),
+    })
+    assert.equal(restore.status, 200)
+  }
+})
+
 test('purge removes a revoked key record; active keys are protected', async () => {
   const mk = await fetch(`${adminUrl}/api/keys`, {
     method: 'POST',

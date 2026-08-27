@@ -59,6 +59,7 @@ function admissionOptsFrom(s: Settings): AdmissionOpts {
     priorityApps: priorityOrder(s.appPriority),
     streamProtect: s.streamProtect,
     streamPacingMs: s.streamPacingMs,
+    reservedRanges: s.reserved,
   }
 }
 

@@ -311,7 +311,9 @@ sobre ese nodo se ejecutan **de una en una** y con un espaciado mínimo entre ar
 (`streamPacingMs`). Sin consolas abiertas no hay ventana que proteger y rigen los caps normales sin
 recorte. La guardia cubre también consolas abiertas sin pasar por el proxy (la UI de Proxmox, otras
 plataformas), nunca deniega (solo serializa y espacia) y se desactiva desde Settings
-(`streamProtect`).
+(`streamProtect`). Excepción: una consola sobre un VMID de un **rango reservado** no activa la
+guardia; es el operador mirando infraestructura, no una retransmisión, y no debe frenar a las
+aplicaciones.
 
 | Código | Significado                                                                                        | Qué debe hacer la aplicación                                 |
 | ------ | -------------------------------------------------------------------------------------------------- | ------------------------------------------------------------ |
