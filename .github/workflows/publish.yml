@@ -5,6 +5,9 @@ name: publish
 on:
   release:
     types: [published]
+  # Manual publish: rebuild and push :latest on demand (e.g. after a registry
+  # move) without cutting a release. Semver tags only apply on a release event.
+  workflow_dispatch:
 
 permissions:
   contents: write # attach deploy artifacts as release assets
@@ -42,6 +45,7 @@ jobs:
       # newer, mutable releases accept them and a host `gh release download`s
       # them, see README).
       - name: Attach deploy artifacts to the release
+        if: github.event_name == 'release'
         continue-on-error: true
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
