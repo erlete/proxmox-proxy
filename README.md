@@ -1,6 +1,6 @@
 # proxmox-proxy
 
-[![ci](https://github.com/DLT-Code/proxmox-proxy/actions/workflows/ci.yml/badge.svg)](https://github.com/DLT-Code/proxmox-proxy/actions/workflows/ci.yml) [![release-please](https://github.com/DLT-Code/proxmox-proxy/actions/workflows/release-please.yml/badge.svg)](https://github.com/DLT-Code/proxmox-proxy/actions/workflows/release-please.yml) [![publish](https://github.com/DLT-Code/proxmox-proxy/actions/workflows/publish.yml/badge.svg)](https://github.com/DLT-Code/proxmox-proxy/actions/workflows/publish.yml)
+[![ci](https://github.com/erlete/proxmox-proxy/actions/workflows/ci.yml/badge.svg)](https://github.com/erlete/proxmox-proxy/actions/workflows/ci.yml) [![release-please](https://github.com/erlete/proxmox-proxy/actions/workflows/release-please.yml/badge.svg)](https://github.com/erlete/proxmox-proxy/actions/workflows/release-please.yml) [![publish](https://github.com/erlete/proxmox-proxy/actions/workflows/publish.yml/badge.svg)](https://github.com/erlete/proxmox-proxy/actions/workflows/publish.yml)
 
 ![Dashboard del panel web](./.github/assets/panel-dashboard-page.png)
 
@@ -57,14 +57,13 @@ reiniciar.
 
 ## Puesta en marcha
 
-El proxy se despliega desde una imagen ya publicada en `ghcr.io/dlt-code/proxmox-proxy`. No hace
+El proxy se despliega desde una imagen ya publicada en `ghcr.io/erlete/proxmox-proxy`. No hace
 falta el código fuente en el host: solo el `compose.yml` y un `.env`, ambos adjuntos a cada release.
 
 ```bash
-gh release download -R DLT-Code/proxmox-proxy -p compose.yml -p env.example
+gh release download -R erlete/proxmox-proxy -p compose.yml -p env.example
 cp env.example .env          # rellena las 2 variables obligatorias (upstream y token de servicio)
-docker login ghcr.io         # la imagen es privada: usa un token con read:packages
-docker compose up -d
+docker compose up -d         # la imagen es pública: no hace falta docker login
 docker compose logs proxy    # en el primer arranque imprime la contraseña del panel UNA sola vez
 ```
 
