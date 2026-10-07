@@ -19,6 +19,7 @@ import { ConsoleDisabledError, type ConsoleBroker } from '../upstream/console.js
 import type { ClusterSnapshot } from '../upstream/cluster.js'
 import type { HealthMonitor } from '../upstream/health.js'
 import { UpstreamError, type Upstream } from '../upstream/client.js'
+import { websocketCaFrom } from '../upstream/websocket-ca.js'
 import type { IdAllocator } from './allocator.js'
 import {
   GROUP_ACTIONS,
@@ -189,6 +190,9 @@ export function createDataPlaneHandler(deps: DataPlaneDeps): RequestListener {
     ops,
   } = deps
   const serviceAuth = `PVEAPIToken=${config.serviceToken}`
+  // Read once: the CA file is deployment config, not something that changes
+  // while the proxy runs.
+  const websocketCa = websocketCaFrom(config.upstreamCaPath)
 
   // /proxy/health is unauthenticated (docker healthcheck, app probes), so it
   // discloses only liveness, never the upstream version string.
@@ -470,6 +474,7 @@ export function createDataPlaneHandler(deps: DataPlaneDeps): RequestListener {
       sendJson(res, 200, {
         ...session,
         websocketBase: current.publicWsUrl || config.upstreamUrl.origin,
+        websocketCa,
       })
       ops.record({
         keyName: key.name,
@@ -881,6 +886,7 @@ export function createDataPlaneHandler(deps: DataPlaneDeps): RequestListener {
           name: key.name,
           vmidRanges: key.vmidRanges,
           websocketBase: current.publicWsUrl || config.upstreamUrl.origin,
+          websocketCa,
           admission: {
             clone: current.cloneCap,
             delete: current.deleteCap,
@@ -891,6 +897,7 @@ export function createDataPlaneHandler(deps: DataPlaneDeps): RequestListener {
             consoleSession: consoleBroker.enabled,
             linkedClone: current.linkedVlanRange != null,
             proxyAssignsNewid: true,
+            websocketCa: true,
           },
         })
         return

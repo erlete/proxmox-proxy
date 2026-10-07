@@ -139,9 +139,15 @@ Authorization: <PROXMOX_PROXY_KEY>
   "name": "mi-app",
   "vmidRanges": [[1100000, 1100999]],
   "websocketBase": "https://nodo.cluster:8006",
+  "websocketCa": "-----BEGIN CERTIFICATE-----\n...",  // null sin PROXMOX_UPSTREAM_TLS_CA
   "admission": { "clone": 15, "delete": 4, "suspend": 2 },
   "linkedVlanRange": [1000, 1149],          // null si la clonación enlazada está desactivada
-  "features": { "consoleSession": true, "linkedClone": true, "proxyAssignsNewid": true }
+  "features": {
+    "consoleSession": true,
+    "linkedClone": true,
+    "proxyAssignsNewid": true,
+    "websocketCa": true
+  }
 }
 ```
 
@@ -276,7 +282,8 @@ POST /proxy/console-session
 
 200 OK
 { "port": "5901", "ticket": "...", "cookie": "...", "expiresAt": 1735000000000,
-  "websocketBase": "https://nodo:8006" }
+  "websocketBase": "https://nodo:8006",
+  "websocketCa": "-----BEGIN CERTIFICATE-----\n..." }
 ```
 
 `expiresAt` (epoch en ms) marca hasta cuándo es fiable la cookie del VNC: pasado ese momento, la
@@ -284,6 +291,13 @@ aplicación debe pedir una sesión nueva. El proxy acuña las credenciales del w
 identidad dedicada que solo tiene `VM.Console`. La aplicación abre el websocket **directo contra el nodo** (`websocketBase`), no contra
 el proxy: el stream nunca cruza el proxy, y por eso un reinicio de este no corta consolas. El VMID
 debe estar en rango.
+
+Como el websocket va directo al nodo, la aplicación tiene que confiar en el certificado del nodo.
+`websocketCa` es la CA con la que el proxy verifica el clúster (`PROXMOX_UPSTREAM_TLS_CA`),
+reducida a los certificados de CA del fichero: la aplicación la añade a su confianza para esa
+conexión y no necesita llevar la CA del clúster dentro. Es `null` si el proxy no tiene ese fichero:
+entonces los nodos deben presentar un certificado en el que la aplicación ya confíe (por ejemplo,
+uno público detrás de `publicWsUrl`).
 
 ## Qué NO puede hacer una aplicación
 

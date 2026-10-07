@@ -1,9 +1,14 @@
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
 import { createServer, type Server } from 'node:http'
 import type { AddressInfo } from 'node:net'
+import { join } from 'node:path'
 import { after, before, test } from 'node:test'
 import { createApp, type App } from '../src/app.js'
 import { loadConfig } from '../src/config.js'
+
+/** What the proxy publishes from the fixture bundle: its CA, not its leaf. */
+const upstreamCa = `${readFileSync(join(import.meta.dirname, 'fixtures', 'upstream-ca.pem'), 'utf8').trim()}\n`
 
 /**
  * Boots the full proxy against a fake pveproxy and exercises the whole v0
@@ -242,6 +247,9 @@ before(async () => {
     SINGLETON_POOL: 'testlock',
     PROXMOX_CONSOLE_USERNAME: 'svc-console@pve',
     PROXMOX_CONSOLE_PASSWORD: 'console-pw',
+    // The fake upstream is plain HTTP, so the CA is not used to talk to it; it
+    // is here for what the proxy publishes to apps (`websocketCa`).
+    PROXMOX_UPSTREAM_TLS_CA: join(import.meta.dirname, 'fixtures', 'upstream-ca-bundle.pem'),
   })
   app = await createApp(config)
   // One edge port multiplexes both planes by path, so both URLs are the same.
@@ -358,9 +366,17 @@ test('data plane auth and scoping', async () => {
 test('whoami and health', async () => {
   const who = await fetch(`${dataUrl}/proxy/whoami`, { headers: { authorization: appToken } })
   assert.equal(who.status, 200)
-  const body = (await who.json()) as { name: string; vmidRanges: number[][] }
+  const body = (await who.json()) as {
+    name: string
+    vmidRanges: number[][]
+    websocketCa: string | null
+    features: { websocketCa: boolean }
+  }
   assert.equal(body.name, 'app-a')
   assert.deepEqual(body.vmidRanges, [[1100000, 1100999]])
+  // Only the CA of the bundle, never the leaf next to it.
+  assert.equal(body.features.websocketCa, true)
+  assert.equal(body.websocketCa, upstreamCa)
 
   // The first upstream health check is async: poll instead of racing it
   // (generous budget, the suite runs files in parallel).
@@ -458,9 +474,11 @@ test('console-session mints credentials for in-scope vms only', async () => {
     ticket: string
     cookie: string
     websocketBase: string
+    websocketCa: string | null
     expiresAt: number
   }
   assert.equal(session.port, '5901')
+  assert.equal(session.websocketCa, upstreamCa)
   assert.equal(session.ticket, 'VNCTICKET-1100100')
   assert.equal(session.cookie, 'FAKE-AUTH-COOKIE')
   assert.ok(session.websocketBase.startsWith('http'))
