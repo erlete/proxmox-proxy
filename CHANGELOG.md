@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.12.0](https://github.com/erlete/proxmox-proxy/compare/v0.11.2...v0.12.0) (2026-10-08)
+
+
+### Features
+
+* **dataplane:** publish the cluster CA for the console websocket ([c125c0b](https://github.com/erlete/proxmox-proxy/commit/c125c0b9c2b91f563aa5e2267e41126f30ff8816))
+
 ## [0.11.2](https://github.com/DLT-Code/proxmox-proxy/compare/v0.11.1...v0.11.2) (2026-08-27)
 
 
